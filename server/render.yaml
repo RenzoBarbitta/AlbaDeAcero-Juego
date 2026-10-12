@@ -2,7 +2,7 @@ services:
   - type: web
     name: alba-room-relay
     runtime: docker
-    dockerfilePath: ./server/Dockerfile
+    dockerfilePath: Dockerfile
     dockerContext: ./server
     healthCheckPath: /
     envVars:
