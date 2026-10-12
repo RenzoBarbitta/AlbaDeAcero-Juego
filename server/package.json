@@ -1,0 +1,1 @@
+{"name":"alba-room-relay","version":"1.0.0","private":true,"scripts":{"start":"node relay.cjs","test":"node relay.test.cjs"},"dependencies":{"ws":"8.22.0"}}

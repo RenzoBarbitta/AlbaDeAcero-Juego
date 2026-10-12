@@ -1,0 +1,7 @@
+.godot/
+server/node_modules/
+server/.pnpm-store/
+tests/*_temp.cfg
+tests/network_*.cfg
+tests/network_*.txt
+*.log
