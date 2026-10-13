@@ -5,6 +5,7 @@ extends CharacterBody2D
 ## jugadores locales (coop) mediante un índice de entrada.
 
 signal died(index: int)
+var network_active := true
 
 const BulletScript := preload("res://scripts/projectiles/bullet.gd")
 const FxScript := preload("res://scripts/fx/fx.gd")

@@ -48,7 +48,7 @@ func _ready() -> void:
 		grid.add_child(button)
 		buttons[id] = button
 	var ready_button := Button.new()
-	ready_button.text = "ESTOY LISTO / SIGUIENTE OLEADA"
+	ready_button.text = "LISTO PARA SUBIR / ENTRA A LA CABINA"
 	ready_button.custom_minimum_size.y = 32
 	ready_button.add_theme_font_size_override("font_size",12)
 	ready_button.pressed.connect(func():
@@ -73,7 +73,7 @@ func _input(event: InputEvent) -> void:
 func _process(_delta: float) -> void:
 	var stage: Node2D = game.level
 	panel.visible = opened and stage.phase in ["shop","preparing"] and GameManager.state==GameManager.State.PLAYING
-	if stage.phase=="combat": opened = false
+	if stage.phase not in ["shop","preparing"]: opened = false
 	NetSession.local_shop_open = panel.visible
 	if panel.visible:
 		game.players[local_index()]._end_charge()
@@ -92,7 +92,10 @@ func _draw() -> void:
 	if GameManager.state!=GameManager.State.PLAYING: return
 	var stage: Node2D = game.level
 	var living: int = stage.living_count() if NetSession.is_authority() else stage.remote_alive
-	var label := "OLEADA %d / ACTIVOS %d / ENTRANDO %d" % [stage.wave,living,stage.remaining] if stage.phase=="combat" else "B MEJORAS / %ds / LISTOS %d/%d" % [ceili(stage.phase_time),stage.ready_players.size(),game.players.size()]
+	var label := "PISO %d / ACTIVOS %d / ENTRANDO %d" % [stage.floor_number,living,stage.remaining]
+	if stage.phase=="shop": label = "ASCENSOR %d/%d / E LISTO / B MEJORAS" % [stage.cabin_players.size(),stage.participating().size()]
+	elif stage.phase=="preparing": label = "PISO 1 / B MEJORAS / COMIENZA EN %ds" % ceili(stage.phase_time)
+	elif stage.phase in ["departing","transit"]: label = "SUBIENDO AL PISO %d / %d A BORDO" % [stage.floor_number+1,stage.cabin_players.size()]
 	PT.draw_box(self,label,Rect2(8,72,480,16),Color("ffd45a"),1,PT.LEFT)
 	if stage.phase=="combat" and stage.wave%2==0 and not stage.bonus_done:
 		PT.draw_box(self,("BONUS: DOS PILOTOS EN LOS AROS / %d%%" if game.players.size()>1 else "BONUS: MANTEN UN ARO / %d%%") % roundi(stage.bonus_progress/6*100),Rect2(8,94,560,14),Color("63ffc3"),1,PT.LEFT)

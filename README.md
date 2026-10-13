@@ -13,7 +13,9 @@ checkpoints, rutas verticales, poderes de jefes y secretos.
 
 En la pantalla de salas, **ENTRENAR SOLO** permite probar las hordas sin servidor ni conexión. No abre cooperativo local.
 
-**El servidor público todavía no está alojado.** La integración fue comprobada con cuatro procesos independientes de Godot conectados al relay local. Para jugar por Internet hay que alojar `server/` y configurar su URL pública; ver `server/README.md`.
+El juego usa `wss://albadeacero-juego.onrender.com`. USAR SERVIDOR PUBLICO restaura esa direccion. El despliegue inicial fallo porque Render no encontraba Dockerfile en la raiz; la correccion se publico en el commit `50ed8b5`. Render ya responde y cuatro procesos de Godot verificaron las salas, controles, compras y ascenso contra el servidor publico.
+
+Las hordas avanzan piso por piso dentro de un edificio. Al despejar un piso, B abre mejoras; cada piloto entra en la cabina central y pulsa E para confirmar. Hay cuatro puestos, pero se cuentan solo los pilotos conectados: sirve para partidas de uno, dos, tres o cuatro. Las puertas se cierran, el ascensor sube y comienza el siguiente combate. Se conservan creditos y mejoras. Un invitado que se desconecte no bloquea al resto; si se va el anfitrion, termina la conexion. Ocho distribuciones de pisos se alternan y la dificultad crece con la oleada y los participantes. Cuatro procesos independientes de Godot verificaron este flujo contra el relay local.
 
 ## Ocho pilotos y progresión
 
@@ -32,7 +34,20 @@ Doble salto permanente: completar oleada 3 o vencer dos jefes distintos. Jetpack
 
 ## Escenarios y arenas
 
-Los ocho fondos tienen composiciones propias: hornos y chimeneas, arcos en ruinas, auroras y montañas, volcán, reactor, caverna de cristales, ciudad nocturna y bosque bioluminiscente. El distrito central reemplaza la escalera interpolada por recorridos con transporte: montacargas, vagones, plataformas suspendidas y saltos dirigidos entre islas. Los saltos dirigidos no requieren habilidades desbloqueadas.
+Los ocho mapas usan tres sectores completos escritos a mano por zona (24 en total), con ancho, alturas, direccion, transportes y obstaculos propios. Ya no se reutilizan los distritos genericos del principio y del final. Fondos, soportes de terrazas y mecanismos acompañan cada recorrido.
+
+| Zona | Sectores del recorrido | Mecanica ambiental |
+| --- | --- | --- |
+| Fundicion | Muelle de colada, chimenea de carga, horno de coronacion | Cintas, prensas y montacargas |
+| Ruinas | Acueducto roto, torre de contrapesos, galeria de los ecos | Arcos, retornos y muros rompibles |
+| Glaciar | Bahia a la deriva, agujas de la aurora, puente del deshielo | Tempanos moviles, viento y hielo fragil |
+| Volcan | Crater inferior, chimeneas gemelas, caldera fracturada | Geiseres de lanzamiento y respiraderos |
+| Central | Subestacion, nucleo vertical, anillos de descarga | Puentes electricos intermitentes y laseres |
+| Cantera | Frente de extraccion, pozo de las vagonetas, galeria del derrumbe | Vetas rompibles, vagonetas y prensas |
+| Ciudad | Azoteas del distrito, linea aerea, antenas de vigilancia | Saltos entre edificios, trenes y vigilancia |
+| Biolaboratorio | Jardin de cultivo, arbol de sintesis, invernadero mutante | Hojas de lanzamiento y puentes que crecen al activar su bulbo |
+
+Los lanzamientos dirigidos permiten recorrer la ruta principal sin doble salto ni jetpack. Los bulbos se activan con E o disparando y sostienen el puente durante ocho segundos. Los ascensores esperan un segundo en cada extremo para embarcar y bajar.
 
 Cada arena tiene distribución y peligro propios: prensa de fundición, artillería de ruinas, viento glacial, respiraderos volcánicos, barrido del reactor, ondas de cantera, tren urbano o contaminación biológica. Los peligros anuncian su ciclo visualmente.
 
@@ -44,13 +59,7 @@ Las escaleras superpuestas se verifican usando el jugador y la física reales.
 La entrada tiene suelo seguro, jugadores separados del borde, checkpoint
 temprano, salto de práctica y cámara colocada antes de iniciar.
 
-Cada misión recorre tres distritos de 1600 píxeles con perfiles propios:
-chimeneas, galerías, crestas, torres, terrazas y azoteas. Las rutas ascienden
-entre 560 y 720 píxeles desde el acceso, invierten su dirección, ofrecen
-balcones opcionales y conservan checkpoints en altura. Un contrafuerte sólido
-impide atravesar el distrito caminando por el fondo. La cámara cubre las cimas.
-Las pasarelas tienen siluetas propias por zona y las galerías forman cubiertas
-continuas; también hay ascensores y atajos inestables.
+Los sectores tienen entre 1280 y 1760 pixeles de ancho; alternan terrazas amplias, ascensos, retornos y descensos segun el lugar. Hay checkpoints elevados y balcones opcionales. Las salas de controles tambien tienen distribuciones diferentes por zona. Las escoltas usan un transporte propio para poder seguir al nucleo o dron sin vuelo desbloqueado.
 
 La primera sala conserva el puzzle regional de la tabla. Las otras dos son
 expediciones espaciales, con distribución en altura y reglas diferentes:
@@ -88,7 +97,7 @@ Las invocaciones de los jefes también usan la familia de su zona.
 
 ## Online por código
 
-1. Abrí ONLINE y escribí la URL del servidor de salas.
+1. El servidor ya viene configurado con `wss://albadeacero-juego.onrender.com`.
 2. El anfitrión crea la sala y comparte su código de seis caracteres.
 3. Hasta tres invitados entran con ese código. Cada uno elige su piloto.
 4. El anfitrión elige la arena e inicia las hordas.
@@ -137,6 +146,8 @@ Los avances individual y cooperativo se guardan separados en
 - `tests/zones_runner.tscn`: los 24 puzzles, enemigos regionales y saltos reales.
 - `tests/four_online.tscn`: cuatro procesos, puestos independientes, compras, oleadas y jefes replicados.
 - `tests/horde_runner.tscn`: ocho pilotos, armas, desbloqueos, escalado, compras, rescates y objetivos de dos jugadores.
+- `tests/vertical_runner.tscn`: 24 geometrias distintas, ausencia de superposiciones, saltos normales y escoltas con fisica real.
+- `tests/campaign_preview.tscn`: capturas de los 24 sectores en `tests/previews/rebuild_*.png`.
 - `tests/transport_runner.tscn`: saltos dirigidos y transportes con física real.
 - `tests/mobility_runner.tscn`: doble salto, jetpack y recarga al aterrizar.
 - `tests/online_runner.tscn`: dos procesos conectados al relay; perfiles,

@@ -111,7 +111,7 @@ func _draw_modes() -> void:
 	panel(Rect2(20,82,372,234),Color("73f7ff"))
 	PT.draw(self,"MODO PRINCIPAL",Vector2(40,102),Color("73f7ff"))
 	PT.draw(self,"HORDAS ONLINE",Vector2(40,130),INK,2)
-	var rows := ["SALAS CON CODIGO / HASTA 4 JUGADORES","OLEADAS GRANDES / JEFE CADA 3 RONDAS","CREDITOS Y MEJORAS ENTRE COMBATES","RESCATES / FUSION / DIFICULTAD ADAPTABLE"]
+	var rows := ["SALAS CON CODIGO / HASTA 4 JUGADORES","SUBE POR PISOS / JEFE CADA 3 RONDAS","ASCENSOR DE 4 PUESTOS / MEJORAS","RESCATES / FUSION / DIFICULTAD ADAPTABLE"]
 	for i in rows.size(): PT.draw(self,rows[i],Vector2(40,172+i*20),SOFT)
 	button("ENTRAR A SALAS"+(" / ENTER" if _online_focus else ""),Rect2(40,274,332,28),"duo",Color("73f7ff"))
 	panel(Rect2(412,82,208,234),Color("ffb15c"))

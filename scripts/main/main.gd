@@ -42,6 +42,7 @@ func _ready() -> void:
 		players.append(_make_player(i,GameManager.pilot_at(i),level.player_spawn+Vector2(i*28,0)))
 	for p in players:
 		p.set_camera_limits(level.camera_rect)
+		if GameManager.horde_mode: p.get_camera().position.y = -52
 		if not GameManager.coop:
 			GameManager.camera_override = p.get_camera()
 
@@ -170,7 +171,7 @@ func _process(_delta: float) -> void:
 				mid += p.global_position
 				alive_n += 1.0
 		if alive_n > 0.0:
-			_shared_cam.position = mid / alive_n + Vector2(0, -8)
+			_shared_cam.position = mid / alive_n + Vector2(0, -52 if GameManager.horde_mode else -8)
 			if players.size() == 2:
 				var separation: Vector2 = (players[0].global_position-players[1].global_position).abs()
 				var target := clampf(minf(320.0/(separation.x+150),180.0/(separation.y+120)),0.48,1.0)

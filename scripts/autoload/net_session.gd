@@ -26,12 +26,22 @@ var _input_sequence := 0
 var _latest_input := -1
 var _silence := 0.0
 var _connect_elapsed := 0.0
+var _input_tick := 0.0
+const DEFAULT_URL := "wss://albadeacero-juego.onrender.com"
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var cfg := ConfigFile.new()
 	if cfg.load("user://online.cfg") == OK:
-		server_url = cfg.get_value("online","server","")
+		server_url = str(cfg.get_value("online","server",DEFAULT_URL))
+		if server_url.strip_edges()=="" or server_url in ["ws://127.0.0.1:8787","ws://localhost:8787"]:
+			server_url = DEFAULT_URL
+			cfg.set_value("online","server",DEFAULT_URL)
+			cfg.save("user://online.cfg")
+	else:
+		cfg.set_value("online","server",DEFAULT_URL)
+		cfg.save("user://online.cfg")
+		server_url = DEFAULT_URL
 	var override := OS.get_environment("ALBA_RELAY_URL")
 	if override != "":
 		server_url = override
@@ -39,8 +49,18 @@ func _ready() -> void:
 func is_authority() -> bool:
 	return not online or host
 
+func use_public_server() -> void:
+	disconnect_room()
+	server_url = DEFAULT_URL
+	var cfg := ConfigFile.new()
+	cfg.set_value("online","server",server_url)
+	cfg.save("user://online.cfg")
+	status = "SERVIDOR PUBLICO SELECCIONADO / CREA O ENTRA A UNA SALA"
+	status_changed.emit()
+
 func connect_room(create: bool,code: String = "") -> void:
 	disconnect_room()
+	server_url = server_url.strip_edges().replace("https://","wss://").replace("http://","ws://")
 	if not server_url.begins_with("ws://") and not server_url.begins_with("wss://"):
 		status = "INGRESA LA URL WSS DEL SERVIDOR"
 		status_changed.emit()
@@ -107,7 +127,11 @@ func _process(delta: float) -> void:
 	socket.poll()
 	if not online and not _pending.is_empty():
 		_connect_elapsed += delta
-		if _connect_elapsed > 8:
+		var timeout := 75.0 if server_url.contains("onrender.com") else 15.0
+		if _connect_elapsed>15 and status=="CONECTANDO...":
+			status = "DESPERTANDO SERVIDOR / ESPERA UN MOMENTO"
+			status_changed.emit()
+		if _connect_elapsed > timeout:
 			_pending = {}
 			socket.close()
 			status = "SERVIDOR NO DISPONIBLE - REVISA LA URL"
@@ -121,7 +145,9 @@ func _process(delta: float) -> void:
 			var packet = JSON.parse_string(socket.get_packet().get_string_from_utf8())
 			if packet is Dictionary:
 				receive(packet)
-		if online and not host and is_instance_valid(world) and GameManager.state == GameManager.State.PLAYING:
+		_input_tick += delta
+		if online and not host and is_instance_valid(world) and GameManager.state == GameManager.State.PLAYING and _input_tick>=1.0/60.0:
+			_input_tick = 0
 			_input_sequence += 1
 			send_packet({"type":"input","seq":_input_sequence,"data":capture_input()})
 		_silence += delta
@@ -207,11 +233,16 @@ func receive(packet: Dictionary) -> void:
 			get_tree().paused = true
 		"peer_left","host_left":
 			slots = packet.get("slots",[])
-			remote_inputs.erase(str(int(packet.get("slot",-1))))
-			peer_ready = false
+			var departed := int(packet.get("slot",-1))
+			remote_inputs.erase(str(departed))
+			peer_ready = slots.size()>1
 			remote_input = {}
-			status = "EL COMPANERO SE DESCONECTO"
-			GameManager.set_paused(true)
+			if packet["type"]=="peer_left" and GameManager.horde_mode and is_instance_valid(world):
+				if host: world.game.level.disconnect_pilot(match_slots.find(departed))
+				status = "%d/4 CONECTADOS / LA PARTIDA CONTINUA" % slots.size()
+			else:
+				status = "EL ANFITRION O COMPANERO SE DESCONECTO"
+				GameManager.set_paused(true)
 			status_changed.emit()
 		"error":
 			_pending = {}

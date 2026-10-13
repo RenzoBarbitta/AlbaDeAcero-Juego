@@ -9,6 +9,9 @@ func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	size = Vector2(640,360)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	make_button("USAR SERVIDOR PUBLICO",Rect2(36,76,280,26),func():
+		NetSession.use_public_server()
+		address.text = NetSession.server_url)
 	make_button("ENTRENAR SOLO",Rect2(420,76,184,26),func():
 		NetSession.disconnect_room()
 		GameManager.coop = true
@@ -16,14 +19,11 @@ func _ready() -> void:
 		GameManager.party_characters = [GameManager.character]
 		GameManager.party_mobility = [GameManager.mobility.duplicate()]
 		GameManager.start_stage())
-	var server_label := Label.new()
-	server_label.text = "Servidor de salas (wss://...)"
-	server_label.position = Vector2(36,84)
-	add_child(server_label)
 	address = LineEdit.new()
 	address.position = Vector2(36,112)
 	address.size = Vector2(568,30)
-	address.placeholder_text = "wss://tu-servidor-publico"
+	address.add_theme_font_size_override("font_size",12)
+	address.placeholder_text = "Servidor de salas (wss://...)"
 	address.text = NetSession.server_url
 	add_child(address)
 	code = LineEdit.new()
@@ -56,7 +56,7 @@ func _ready() -> void:
 	message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	message.add_theme_font_size_override("font_size",12)
 	add_child(message)
-	launch = make_button("ELEGIR ARENA",Rect2(338,306,266,30),func(): GameManager.confirm_character())
+	launch = make_button("ELEGIR EDIFICIO",Rect2(338,306,266,30),func(): GameManager.confirm_character())
 	make_button("VOLVER",Rect2(36,306,244,30),func():
 		NetSession.disconnect_room()
 		overlay._tab = 3)
@@ -73,7 +73,7 @@ func make_button(label: String,rect: Rect2,callback: Callable) -> Button:
 
 func connect_to_room(create: bool) -> void:
 	NetSession.server_url = address.text.strip_edges()
-	if OS.get_environment("ALBA_RELAY_URL") == "":
+	if OS.get_environment("ALBA_RELAY_URL")=="":
 		var cfg := ConfigFile.new()
 		cfg.set_value("online","server",NetSession.server_url)
 		cfg.save("user://online.cfg")
@@ -82,4 +82,4 @@ func connect_to_room(create: bool) -> void:
 func _process(_delta: float) -> void:
 	message.text = NetSession.status
 	launch.disabled = not NetSession.online or not NetSession.host
-	launch.text = "ELEGIR ARENA" if NetSession.host else "ESPERANDO AL ANFITRION"
+	launch.text = "ELEGIR EDIFICIO" if NetSession.host else "ESPERANDO AL ANFITRION"

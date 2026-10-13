@@ -9,17 +9,19 @@ const FX := preload("res://scripts/fx/fx.gd")
 
 func _physics_process(delta: float) -> void:
 	if players.is_empty() or GameManager.state != GameManager.State.PLAYING: return
-	var living: Array = players.filter(func(p): return p.alive)
+	var living: Array = players.filter(func(p): return p.alive and p.network_active)
 	if living.is_empty() and not _all_down:
 		_all_down = true
 		if GameManager.team_retries <= 0:
 			GameManager.trigger_game_over()
 			return
 		GameManager.team_retries -= 1
-		for p in players: p.respawn_at(game.level.respawn_position()+Vector2(p.index*28,0))
+		for p in players:
+			if p.network_active: p.respawn_at(game.level.respawn_position()+Vector2(p.index*28,0))
 		_all_down = false
 	for i in players.size():
 		var down: Player = players[i]
+		if not down.network_active: continue
 		if down.alive:
 			rescue[i] = 0
 			continue

@@ -67,7 +67,7 @@ func snapshot() -> Dictionary:
 		moving.append({"x":child.position.x,"y":child.position.y,"visible":child.visible,"crumble":child._state if child.get_script()==preload("res://scripts/world/crumble_platform.gd") else 0})
 	var actors: Array = []
 	for p in game.players:
-		actors.append({"p":[p.position.x,p.position.y],"v":[p.velocity.x,p.velocity.y],"a":[p.aim.x,p.aim.y],"f":p.facing,"alive":p.alive,"floor":p.is_on_floor(),"weapon":p.weapon,"hurt":p._invuln,"dash":p._dash_time,"shot":p._shoot_cooldown,"upgrades":[p.damage_level,p.armor_level,p.fire_level],"mobility":p.bonus_mobility,"jet":p.jet_active,"fuel":p.jet_fuel})
+		actors.append({"p":[p.position.x,p.position.y],"v":[p.velocity.x,p.velocity.y],"a":[p.aim.x,p.aim.y],"f":p.facing,"alive":p.alive,"connected":p.network_active,"floor":p.is_on_floor(),"weapon":p.weapon,"hurt":p._invuln,"dash":p._dash_time,"shot":p._shoot_cooldown,"upgrades":[p.damage_level,p.armor_level,p.fire_level],"mobility":p.bonus_mobility,"jet":p.jet_active,"fuel":p.jet_fuel})
 	var entities: Array = []
 	for e in descendants(game.world):
 		if e is Node2D and not visible_to_team(e.global_position,600):
@@ -133,6 +133,8 @@ func apply_snapshot(data: Dictionary) -> void:
 		p.aim = Vector2(actor["a"][0],actor["a"][1])
 		p.facing = int(actor["f"])
 		p.alive = actor["alive"]
+		p.network_active = actor.get("connected",true)
+		p.visible = p.network_active
 		p.net_on_floor = actor["floor"]
 		p.weapon = actor["weapon"]
 		p._invuln = float(actor["hurt"])

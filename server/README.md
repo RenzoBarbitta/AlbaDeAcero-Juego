@@ -8,10 +8,15 @@ La conexión del invitado no controla un segundo teclado local.
 
 ## Estado del despliegue
 
-El servidor y los cuatro clientes fueron probados juntos en la misma máquina,
-como procesos independientes. **Todavía no hay un servidor público alojado.**
-El código de sala funciona entre PC por Internet cuando ambas usan la misma
-dirección pública del servidor. El código por sí solo no reemplaza ese servidor.
+Direccion configurada: `wss://albadeacero-juego.onrender.com`.
+
+El primer despliegue fallo con `failed to read dockerfile: open Dockerfile: no such file or directory`. Render buscaba el Dockerfile en la raiz y solo existia `server/Dockerfile`. La correccion agrega un Dockerfile de raiz y esta publicada en `main`, commit `50ed8b5`. Si no empieza automaticamente, usar **Manual Deploy -> Deploy latest commit**.
+
+Configuracion del repositorio completo: **Language: Docker**, **Root Directory: vacio**, **Dockerfile Path: ./Dockerfile**, **Docker Build Context: .**, **Docker Command: vacio**, **Health Check Path: /**. Las rutas de Docker se interpretan respecto a la raiz del repositorio, segun la [documentacion de Render](https://render.com/docs/blueprint-spec#docker).
+
+`render.yaml` de raiz configura ese caso. `server/render.yaml` usa rutas explicitas a `./server/Dockerfile` y `./server` para el mismo repositorio. No aplicar ambos como servicios separados. HTTPS `/` debe devolver JSON con `service: "alba-room-relay"`; este servicio aloja las salas, no una version web del juego.
+
+Cuatro procesos independientes de Godot verificaron compras, embarque, ascenso y llegada al siguiente piso tanto contra el relay local como contra el servidor publico de Render. La prueba publica paso 46 comprobaciones. `node server/public-smoke.cjs` tambien verifica cuatro conexiones y las cierra al terminar. HTTPS `/` responde con el JSON esperado.
 
 ## Alojarlo
 
@@ -26,7 +31,7 @@ En hosting con proxy HTTPS, exponé el puerto indicado por la variable PORT.
 El endpoint HTTP / comprueba la salud; WebSocket usa la misma dirección.
 Usá la dirección pública como `wss://tu-dominio` en todos los juegos.
 El archivo `render.yaml` incluye la configuración de un servicio Docker.
-El despliegue requiere una cuenta de hosting y no se realizó en esta tarea.
+La correccion del despliegue fue publicada y el servicio publico fue verificado.
 
 Para desarrollo:
 
@@ -39,6 +44,8 @@ npm start
 Conectá los clientes a `ws://127.0.0.1:8787` solo para pruebas en la misma PC.
 La variable ALBA_RELAY_URL puede fijar la URL sin guardarla en las preferencias.
 
+ALBA_RELAY_URL se lee en el proceso del juego para pruebas o servidores alternativos. El servidor requiere PORT para escuchar en el puerto indicado por Render.
+
 ## Flujo del juego
 
 1. Elegí ONLINE en el menú.
@@ -46,10 +53,11 @@ La variable ALBA_RELAY_URL puede fijar la URL sin guardarla en las preferencias.
 3. El anfitrión elige CREAR SALA y comparte el código de seis caracteres.
 4. El invitado ingresa ese código y elige ENTRAR.
 5. Cada jugador elige su propio piloto.
-6. El anfitrión elige una arena e inicia las hordas.
+6. El anfitrion elige un edificio e inicia las hordas.
+7. Tras despejar cada piso, entren a la cabina central y confirmen con E. Los cuatro puestos no tienen que estar ocupados.
 
 Una sala admite hasta cuatro jugadores y puede iniciarse con uno. Al irse el anfitrión se cierra; al irse el
-invitado se pausa el juego y se informa la desconexión. No hay reconexión
+invitado, las hordas siguen con los pilotos restantes. No hay reconexion
 automática durante una partida. Las salas vacías de invitado caducan tras
 treinta minutos. El proxy de hosting debe permitir conexiones WebSocket largas.
 
