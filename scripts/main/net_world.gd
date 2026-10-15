@@ -10,6 +10,7 @@ var features: Array = []
 const REGION := preload("res://scripts/enemies/zone_enemy.gd")
 const BOSS_ART := preload("res://scripts/enemies/boss_visual.gd")
 const PICKUP := preload("res://scripts/pickups/pickup.gd")
+const BOSS_HAZARD := preload("res://scripts/enemies/boss_hazard.gd")
 const FX := preload("res://scripts/fx/fx.gd")
 
 func _ready() -> void:
@@ -77,8 +78,12 @@ func snapshot() -> Dictionary:
 			if e is Boss:
 				item["design"] = e.boss_id
 				item["rage"] = e._rage
+				item["shielded"] = e._visual.shielded
 				item["action"] = e._visual.action
 				item["phase"] = e._visual.phase
+				item["motion"] = e.velocity.x
+				item["rig_state"] = e._phase
+				item["clock"] = e._t
 			elif e.get_script() == REGION:
 				item["zone"] = e.zone
 				item["air"] = e.airborne
@@ -86,6 +91,8 @@ func snapshot() -> Dictionary:
 				item["clock"] = e._time
 				item["tell"] = e._tell
 			entities.append(item)
+		elif e.get_script()==BOSS_HAZARD and not e.dead:
+			entities.append({"id":str(e.get_instance_id()),"type":"boss_hazard","p":[e.position.x,e.position.y],"v":[e.velocity.x,e.velocity.y],"kind":e.kind,"size":[e.size.x,e.size.y],"color":e.color.to_html(),"age":e.age,"warn":e.warn,"duration":e.duration,"health":e.health})
 		elif e is Bullet and not e._dead:
 			entities.append({"id":str(e.get_instance_id()),"type":"bullet","p":[e.global_position.x,e.global_position.y],"v":[e.velocity.x,e.velocity.y],"color":e.color.to_html(),"player":e.from_player})
 		elif e is Pickup:
@@ -165,6 +172,12 @@ func apply_snapshot(data: Dictionary) -> void:
 					proxy.zone = item.get("zone",GameManager.theme_id)
 					proxy.airborne = item.get("air",false)
 					proxy.small = item.get("small",false)
+			elif item["type"]=="boss_hazard":
+				proxy = BOSS_HAZARD.new()
+				proxy.kind = item["kind"]
+				proxy.replica = true
+				proxy.color = Color.html(item["color"])
+				proxy.size = Vector2(item["size"][0],item["size"][1])
 			elif item["type"] == "pickup":
 				proxy = PICKUP.create(item["kind"],Vector2.ZERO)
 			else:
@@ -187,8 +200,13 @@ func apply_snapshot(data: Dictionary) -> void:
 		if item["type"] == "enemy":
 			if item["boss"]:
 				proxy.rage = item["rage"]
+				proxy.shielded = item.get("shielded",false)
 				proxy.action = item["action"]
 				proxy.phase = item["phase"]
+				proxy.motion = float(item.get("motion",0))
+				proxy.motion_state = item.get("rig_state","idle")
+				proxy.t = float(item.get("clock",0))
+				proxy.scale.x = -1 if int(item["f"])<0 else 1
 			else:
 				proxy.health = int(item["hp"])
 				proxy.max_health = int(item["max"])
@@ -196,6 +214,12 @@ func apply_snapshot(data: Dictionary) -> void:
 				proxy._time = float(item.get("clock",0))
 				proxy._tell = float(item.get("tell",0))
 				proxy.queue_redraw()
+		elif item["type"]=="boss_hazard":
+			proxy.age = float(item["age"])
+			proxy.velocity = Vector2(item.get("v",[0,0])[0],item.get("v",[0,0])[1])
+			proxy.warn = float(item["warn"])
+			proxy.duration = float(item["duration"])
+			proxy.health = int(item["health"])
 		elif item["type"] == "bullet":
 			proxy.modulate = Color.html(item["color"])
 			proxy.rotation = Vector2(item["v"][0],item["v"][1]).angle()

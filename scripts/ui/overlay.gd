@@ -215,8 +215,12 @@ func _draw_result(win: bool) -> void:
 	background("MISION COMPLETA" if win else "UNIDAD CAIDA","INFORME DE OPERACION")
 	panel(Rect2(40,78,560,210),Color("63ffc3") if win else Color("ff758b"))
 	if win:
-		PT.draw(self,"PODER: "+GameManager.weapon_name(GameManager.selected_boss),Vector2(320,94),GOLD,2,PT.CENTER)
-		PT.draw_lines(self,PT.wrap(GameManager.POWERS[GameManager.selected_boss]["desc"],500),Vector2(64,134),SOFT)
+		if GameManager.horde_mode:
+			PT.draw(self,"TORRE ONLINE COMPLETADA",Vector2(320,94),GOLD,2,PT.CENTER)
+			PT.draw_lines(self,PT.wrap("8 JEFES DERROTADOS / NUCLEO OMEGA DESTRUIDO / ARSENAL ONLINE DOMINADO",500),Vector2(64,134),SOFT)
+		else:
+			PT.draw(self,"PODER: "+GameManager.weapon_name(GameManager.selected_boss),Vector2(320,94),GOLD,2,PT.CENTER)
+			PT.draw_lines(self,PT.wrap(GameManager.POWERS[GameManager.selected_boss]["desc"],500),Vector2(64,134),SOFT)
 	else:
 		PT.draw(self,("OLEADA %d / RECORD %d" % [GameManager.run_wave,GameManager.best_wave]) if GameManager.horde_mode else "RECONSTRUYE TU UNIDAD",Vector2(320,98),GOLD,1,PT.CENTER)
 	var rows := [["PUNTOS","%07d" % GameManager.score],["TIEMPO",PT.format_time(GameManager.play_time)],["BAJAS / CAIDAS","%d / %d" % [GameManager.kills,GameManager.deaths]]]

@@ -90,6 +90,9 @@ const BOSSES := {
 	"coloso":   {"name": "COLOSO",   "epithet": "LA ROCA",      "color": Color("c8b48c"), "hp": 130, "contact": 12, "mode": "ground", "abilities": ["jump", "dash", "jump"],        "speed": 20.0, "score": 4200, "theme": "cantera",   "tip": "ESQUIVA EL SALTO Y HUYE DE LA ONDA DE CHOQUE"},
 	"espectro": {"name": "ESPECTRO", "epithet": "LA SOMBRA",    "color": Color("8a5cff"), "hp": 76,  "contact": 9,  "mode": "air",    "abilities": ["homing", "teleport", "sweep"], "speed": 30.0, "score": 4400, "theme": "ciudad",    "tip": "DISPAROS TELEGUIADOS: MUÉVETE EN LÍNEA RECTA"},
 	"enjambre": {"name": "ENJAMBRE", "epithet": "LA LEGIÓN",    "color": Color("57d16a"), "hp": 110, "contact": 10, "mode": "air",    "abilities": ["summon", "sweep", "summon"],   "speed": 20.0, "score": 5000, "theme": "biolab",    "tip": "LIMPIA LOS VOLADORES ANTES DE QUE SE ACERQUEN"},
+	# Jefe secreto del piso final de la torre online. No pertenece a BOSS_ORDER,
+	# por lo que nunca aparece en la campaña normal.
+	"nucleo":   {"name": "NUCLEO OMEGA", "epithet": "EL CORAZON DE LA TORRE", "color": Color("ff4fd8"), "hp": 260, "contact": 13, "mode": "air", "abilities": ["omega", "teleport", "ring", "summon", "spiral", "homing", "omega", "bomb", "burst"], "speed": 36.0, "score": 12000, "theme": "central", "tip": "JEFE EXCLUSIVO ONLINE: CAMBIA DE PATRON SIN DESCANSO"},
 }
 const BOSS_ORDER := ["sierra", "estruendo", "glaciar", "incendio", "voltaje", "coloso", "espectro", "enjambre"]
 
@@ -102,6 +105,26 @@ const POWERS := {
 	"coloso": {"name": "SISMO", "desc": "DOS ONDAS DE CHOQUE PERFORANTES", "cooldown": 0.8},
 	"espectro": {"name": "ESPECTRO", "desc": "ORBE QUE PERSIGUE AL OBJETIVO", "cooldown": 0.6},
 	"enjambre": {"name": "ENJAMBRE", "desc": "TRES DRONES CON GUIADO INDEPENDIENTE", "cooldown": 1.0},
+}
+
+# Arsenal que solo puede comprarse dentro de la torre cooperativa/online.
+# No se guarda como progreso de campaña y new_game() vuelve a cerrarlo.
+const ONLINE_WEAPONS := {
+	# Armas online: fuertes y especiales, pero ya no borran oleadas solas.
+	"online_arc": {"name":"ARCO TESLA", "desc":"ENCADENA HASTA 3 OBJETIVOS / DAÑO REDUCIDO", "cooldown":0.88, "color":Color("62e8ff")},
+	"online_lance": {"name":"LANZA FOTONICA", "desc":"RAYO PESADO / ATRAVIESA HASTA 5 ENEMIGOS", "cooldown":1.15, "color":Color("ffe46b")},
+	"online_swarm": {"name":"ENJAMBRE X4", "desc":"CUATRO MISILES CON GUIADO MODERADO", "cooldown":1.30, "color":Color("69ff9f")},
+	"online_nova": {"name":"NOVA CIRCULAR", "desc":"DESCARGA RADIAL DE 8 PROYECTILES", "cooldown":1.25, "color":Color("ff73df")},
+	"online_saw": {"name":"DOBLE SIERRA", "desc":"DOS DISCOS DE RETORNO / PERFORACION LIMITADA", "cooldown":1.18, "color":Color("ff9b4b")},
+	"online_void": {"name":"LANZA VACIO", "desc":"PROYECTIL PESADO / PERFORACION LIMITADA", "cooldown":1.55, "color":Color("9b7cff")},
+}
+
+const ONLINE_MOBILITY := {
+	"triple_jump": "TRIPLE SALTO",
+	"phase_dash": "DASH FASE",
+	"aero_boost": "IMPULSO AEREO",
+	"combat_regen": "NANORREPARACION",
+	"overclock": "OVERCLOCK",
 }
 const ROUTE_HINTS := {
 	"sierra": "ALTOS HORNOS: ESPERA EL CICLO DE FUEGO",
@@ -559,6 +582,8 @@ func character_name_of(id: String) -> String:
 func weapon_name(id: String) -> String:
 	if POWERS.has(id):
 		return POWERS[id]["name"]
+	if ONLINE_WEAPONS.has(id):
+		return ONLINE_WEAPONS[id]["name"]
 	return WEAPON_NAMES.get(id, id.to_upper())
 
 func _emit_all() -> void:

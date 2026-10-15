@@ -1,31 +1,43 @@
 extends Control
 var overlay: Control
-var address: LineEdit
 var code: LineEdit
 var launch: Button
 var message: Label
+var server_badge: Label
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	size = Vector2(640,360)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	make_button("USAR SERVIDOR PUBLICO",Rect2(36,76,280,26),func():
-		NetSession.use_public_server()
-		address.text = NetSession.server_url)
-	make_button("ENTRENAR SOLO",Rect2(420,76,184,26),func():
+
+	# La direccion real del relay nunca se muestra al jugador. La build publica
+	# usa NetSession.DEFAULT_URL (o ALBA_RELAY_URL durante desarrollo).
+	server_badge = Label.new()
+	server_badge.position = Vector2(36,76)
+	server_badge.size = Vector2(280,28)
+	server_badge.text = "SERVIDOR PUBLICO / LISTO"
+	server_badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	server_badge.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	server_badge.add_theme_font_size_override("font_size",12)
+	add_child(server_badge)
+
+	make_button("ENTRENAR SOLO",Rect2(420,76,184,28),func():
 		NetSession.disconnect_room()
 		GameManager.coop = true
 		GameManager.horde_mode = true
 		GameManager.party_characters = [GameManager.character]
 		GameManager.party_mobility = [GameManager.mobility.duplicate()]
 		GameManager.start_stage())
-	address = LineEdit.new()
-	address.position = Vector2(36,112)
-	address.size = Vector2(568,30)
-	address.add_theme_font_size_override("font_size",12)
-	address.placeholder_text = "Servidor de salas (wss://...)"
-	address.text = NetSession.server_url
-	add_child(address)
+
+	var help := Label.new()
+	help.position = Vector2(36,112)
+	help.size = Vector2(568,38)
+	help.text = "CREA UNA SALA Y COMPARTE EL CODIGO / O ESCRIBE EL CODIGO DE TU AMIGO"
+	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	help.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	help.add_theme_font_size_override("font_size",10)
+	add_child(help)
+
 	code = LineEdit.new()
 	code.position = Vector2(338,170)
 	code.size = Vector2(140,32)
@@ -35,6 +47,7 @@ func _ready() -> void:
 	add_child(code)
 	make_button("CREAR SALA",Rect2(36,170,244,32),func(): connect_to_room(true))
 	make_button("ENTRAR",Rect2(488,170,116,32),func(): connect_to_room(false))
+
 	var pilot := OptionButton.new()
 	pilot.position = Vector2(36,218)
 	pilot.size = Vector2(244,30)
@@ -50,6 +63,7 @@ func _ready() -> void:
 			NetSession.send_packet({"type":"profile","pilot":id,"mobility":GameManager.mobility}))
 	add_child(pilot)
 	make_button("COPIAR CODIGO",Rect2(338,218,266,30),func(): DisplayServer.clipboard_set(NetSession.room_code))
+
 	message = Label.new()
 	message.position = Vector2(36,258)
 	message.size = Vector2(568,36)
@@ -72,14 +86,14 @@ func make_button(label: String,rect: Rect2,callback: Callable) -> Button:
 	return button
 
 func connect_to_room(create: bool) -> void:
-	NetSession.server_url = address.text.strip_edges()
-	if OS.get_environment("ALBA_RELAY_URL")=="":
-		var cfg := ConfigFile.new()
-		cfg.set_value("online","server",NetSession.server_url)
-		cfg.save("user://online.cfg")
+	if not create and code.text.strip_edges().length()!=6:
+		NetSession.status = "EL CODIGO DEBE TENER 6 CARACTERES"
+		NetSession.status_changed.emit()
+		return
 	NetSession.connect_room(create,code.text.strip_edges())
 
 func _process(_delta: float) -> void:
 	message.text = NetSession.status
+	server_badge.text = "SERVIDOR PUBLICO / CONECTADO" if NetSession.online else "SERVIDOR PUBLICO / LISTO"
 	launch.disabled = not NetSession.online or not NetSession.host
 	launch.text = "ELEGIR EDIFICIO" if NetSession.host else "ESPERANDO AL ANFITRION"

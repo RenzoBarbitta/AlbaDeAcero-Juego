@@ -22,15 +22,16 @@ func _ready() -> void:
 	route_start = start
 	var t := create_tween()
 	motion = t
+	t.set_process_mode(Tween.TWEEN_PROCESS_PHYSICS)
 	t.set_loops()
 	if start_delay > 0.0:
 		t.tween_interval(start_delay)
 	t.tween_property(self, "position", start + travel, duration) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	t.tween_interval(0.25)
+	t.tween_interval(1.0)
 	t.tween_property(self, "position", start, duration) \
 		.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	t.tween_interval(0.25)
+	t.tween_interval(1.0)
 
 func _build() -> void:
 	var tex: Texture2D = Platform.theme_tex("tile_%s" % tile)

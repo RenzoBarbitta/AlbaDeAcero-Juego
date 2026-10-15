@@ -12,7 +12,7 @@ const HELP := {
 	"glyph_route":"RECORRE LOS GLIFOS 1 - 3 - 2 - 4; EL ERROR REINICIA LA RUTA",
 	"counterweight":"LLEVA DOS PESOS DEL NIDO 1 A LOS CONTRAPESOS 4 Y 5",
 	"ice_race":"PISA 1 - 2 - 3 - 4 - 5 - 6 ANTES DE QUE TERMINE EL DESHIELO",
-	"warmth":"SIGUE EL NUCLEO TERMICO; SOLO AVANZA SI TE MANTENES CERCA",
+	"warmth":"SUBE AL TEMPANO TERMICO Y PROTEGE EL NUCLEO DURANTE EL VIAJE",
 	"vent_route":"SELLA 2 Y 5 EN FRIO, Y EL RESPIRADERO 4 DURANTE EL CALOR",
 	"hot_cargo":"LLEVA EL REFRIGERANTE DE 1 A 4; DESCANSA EN 2 O 5 PARA ENFRIARLO",
 	"frequency":"DISPARA A LOS EMISORES 2 - 4 - 5 CUANDO SU ANILLO ESTE ABIERTO",
@@ -20,7 +20,7 @@ const HELP := {
 	"ore_cargo":"TRANSPORTA TRES MINERALES DE 1 A 4; CADA VIAJE DEBE TERMINAR",
 	"collapse_race":"MARCA 1 - 3 - 4 - 5 - 6 EN 22 SEGUNDOS, O VUELVE AL INICIO",
 	"stealth":"INFILTRA 2 - 4 - 5 SOLO CUANDO EL RADAR ESTE APAGADO",
-	"courier":"ALCANZA EL DRON Y SIGUE SU RUTA HASTA COMPLETAR LA DESCARGA",
+	"courier":"SUBE AL TRANSPORTE Y ESCOLTA EL DRON HASTA COMPLETAR LA DESCARGA",
 	"samples":"RECOGE LAS MUESTRAS VERDES 2 - 4 - 6; LAS ROJAS CONTAMINAN",
 	"antidote":"LLEVA LA MUESTRA DE 1 A 4 SIN RECIBIR DANO"
 }
@@ -187,7 +187,7 @@ func _physics_process(delta: float) -> void:
 		progress = minf(1,progress+delta/18)
 		if progress>=1: finish()
 	if is_instance_valid(escort_carrier):
-		escort_carrier.global_position = global_position+escort_position()-Vector2(38,8)
+		escort_carrier.global_position = global_position+escort_position()-Vector2(38,40)
 	queue_redraw()
 
 func _drop_cargo() -> void:
@@ -198,7 +198,9 @@ func _drop_cargo() -> void:
 
 func escort_position() -> Vector2:
 	var path := [nodes[0],nodes[1],nodes[2],nodes[3],nodes[4],nodes[5]]
-	var travel := minf(progress*5,4.999)
+	if is_instance_valid(escort_carrier): path.append(Vector2(940,110))
+	var segments := float(path.size()-1)
+	var travel := minf(progress*segments,segments-0.001)
 	var index := floori(travel)
 	return path[index].lerp(path[index+1],fposmod(travel,1))
 

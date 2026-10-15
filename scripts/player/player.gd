@@ -64,6 +64,7 @@ var launch_time := 0.0
 var air_jumps := 0
 var jump_hold := 0.0
 var landing_squash := 0.0
+var online_regen_clock := 0.0
 
 func has_mobility(id: String) -> bool:
 	return GameManager.mobility.has(id) or bonus_mobility.has(id)
@@ -269,6 +270,7 @@ func _physics_process(delta: float) -> void:
 
 	landing_squash = maxf(0,landing_squash-delta*6)
 	_update_timers(delta)
+	_update_online_abilities(delta)
 
 	if _dash_time > 0.0:
 		_do_dash(delta)
@@ -295,15 +297,33 @@ func _update_timers(delta: float) -> void:
 	_jump_buffer = maxf(0.0, _jump_buffer - delta)
 	_dash_cd = maxf(0.0, _dash_cd - delta)
 	_col_cooldown = maxf(0.0, _col_cooldown - delta)
-	_shoot_cooldown = maxf(0.0, _shoot_cooldown - delta*(1+fire_level*0.15))
+	var online_fire_mul := 1.35 if has_mobility("overclock") else 1.0
+	_shoot_cooldown = maxf(0.0, _shoot_cooldown - delta*(1+fire_level*0.15)*online_fire_mul)
 	if is_on_floor():
 		_coyote = COYOTE_TIME
+
+func _update_online_abilities(delta: float) -> void:
+	if not has_mobility("combat_regen"):
+		online_regen_clock = 0.0
+		return
+	if GameManager.p_health[index] >= GameManager.MAX_HEALTH:
+		online_regen_clock = 0.0
+		return
+	online_regen_clock += delta
+	if online_regen_clock>=5.0:
+		online_regen_clock = 0.0
+		GameManager.heal_player(index,1)
+		FxScript.ring(get_parent(),global_position+Vector2(0,-10),Color("63ffc3"),3,14,0.22)
 
 func _do_move(delta: float) -> void:
 	var dir := axis("move_left","move_right")
 	if dir != 0.0:
 		facing = signi(int(dir))
 	var target := dir * RUN_SPEED * float(GameManager.CHARACTERS[character].get("speed",1))
+	if has_mobility("aero_boost"):
+		target *= 1.15
+	if has_mobility("overclock"):
+		target *= 1.08
 	if GameManager.coop and not NetSession.online:
 		for ally in get_tree().get_nodes_in_group("player"):
 			if ally != self:
@@ -342,11 +362,13 @@ func _do_jump(_delta: float) -> void:
 		_coyote = 0.0
 		AudioManager.play("jump", -10.0)
 		FxScript.ring(get_parent(), global_position + Vector2(0, 4), Color(_color.r, _color.g, _color.b, 0.8), 2.0, 12.0, 0.2)
-	elif pressed_once("jump") and not is_on_floor() and air_jumps==0 and has_mobility("double_jump"):
-		velocity.y = -295
-		air_jumps = 1
-		_jump_buffer = 0
-		FxScript.ring(get_parent(),global_position,Color("63ffc3"),4,24,0.25)
+	elif pressed_once("jump") and not is_on_floor():
+		var allowed_air_jumps := 2 if has_mobility("triple_jump") else (1 if has_mobility("double_jump") else 0)
+		if air_jumps < allowed_air_jumps:
+			velocity.y = -305 if has_mobility("triple_jump") else -295
+			air_jumps += 1
+			_jump_buffer = 0
+			FxScript.ring(get_parent(),global_position,Color("63ffc3"),4,24,0.25)
 	if released_once("jump") and velocity.y < 0.0:
 		velocity.y *= JUMP_CUT
 
@@ -354,23 +376,24 @@ func _do_jetpack(delta: float) -> void:
 	jump_hold = jump_hold+delta if pressed("jump") else 0.0
 	jet_active = has_mobility("jetpack") and not is_on_floor() and pressed("jump") and jump_hold>0.25 and jet_fuel>0 and velocity.y>-160
 	if jet_active:
-		velocity.y = move_toward(velocity.y,-110,1100*delta)
-		jet_fuel = maxf(0,jet_fuel-delta/1.8)
+		var lift_target := -145.0 if has_mobility("aero_boost") else -110.0
+		velocity.y = move_toward(velocity.y,lift_target,(1450.0 if has_mobility("aero_boost") else 1100.0)*delta)
+		jet_fuel = maxf(0,jet_fuel-delta/(2.4 if has_mobility("aero_boost") else 1.8))
 
 func _start_dash() -> void:
 	if GameManager.coop and not NetSession.online:
 		for ally in get_tree().get_nodes_in_group("player"):
 			if ally != self and absf(global_position.x-ally.global_position.x) > 450 and facing == int(signf(global_position.x-ally.global_position.x)):
 				return
-	_dash_time = DASH_TIME
-	_dash_cd = DASH_COOLDOWN
+	_dash_time = DASH_TIME * (1.18 if has_mobility("phase_dash") else 1.0)
+	_dash_cd = 0.28 if has_mobility("phase_dash") else DASH_COOLDOWN
 	velocity.y = 0.0
 	AudioManager.play("dash", -10.0)
 	FxScript.ring(get_parent(), global_position + Vector2(0, -10), Color(_color.r, _color.g, _color.b, 0.7), 3.0, 16.0, 0.25)
 
 func _do_dash(_delta: float) -> void:
 	_dash_time -= _delta
-	velocity.x = facing * DASH_SPEED
+	velocity.x = facing * (360.0 if has_mobility("phase_dash") else DASH_SPEED)
 	velocity.y = 0.0
 	if _sprite:
 		_sprite.modulate = Color(_color.r, _color.g, _color.b, 1.0)
@@ -430,6 +453,12 @@ func _handle_shooting(delta: float) -> void:
 			_fire_power()
 			_shoot_cooldown = GameManager.POWERS[weapon]["cooldown"]
 		return
+	if GameManager.ONLINE_WEAPONS.has(weapon):
+		_end_charge()
+		if pressed("shoot") and _shoot_cooldown <= 0:
+			_fire_online_weapon()
+			_shoot_cooldown = float(GameManager.ONLINE_WEAPONS[weapon]["cooldown"])
+		return
 
 	match weapon:
 		"needles","grenade","rail","drones":
@@ -453,6 +482,70 @@ func _handle_shooting(delta: float) -> void:
 				_shoot_cooldown = PLASMA_COOLDOWN
 		_:
 			_shoot_buster(delta)
+
+func _fire_online_weapon() -> void:
+	var cfg: Dictionary = GameManager.ONLINE_WEAPONS[weapon]
+	var col: Color = cfg["color"]
+	var targets: Array = []
+	for enemy in get_tree().get_nodes_in_group("enemy"):
+		if not enemy.dead and global_position.distance_to(enemy.global_position)<420:
+			targets.append(enemy)
+	targets.sort_custom(func(a,b): return global_position.distance_squared_to(a.global_position)<global_position.distance_squared_to(b.global_position))
+	match weapon:
+		"online_arc":
+			# Tesla ahora sirve para control de grupos, no para limpiar media oleada.
+			var last: Vector2 = _muzzle_pos()
+			for enemy in targets.slice(0,3):
+				var beam := Line2D.new()
+				beam.points = PackedVector2Array([last,last.lerp(enemy.global_position,0.5)+Vector2(0,-10),enemy.global_position+Vector2(0,-8)])
+				beam.width = 3
+				beam.default_color = col
+				get_parent().add_child(beam)
+				var tween := beam.create_tween()
+				tween.tween_property(beam,"modulate:a",0.0,0.18)
+				tween.tween_callback(beam.queue_free)
+				enemy.take_damage(4,last)
+				GameManager.register_hit()
+				last = enemy.global_position
+			if targets.is_empty():
+				_power_bullet(aim,500,4,col)
+		"online_lance":
+			var lance := _power_bullet(aim,590,10,col)
+			lance.pierce = true
+			lance.pierce_left = 4
+			lance.heavy = true
+			lance.life = 1.25
+		"online_swarm":
+			for i in 4:
+				var dir: Vector2 = aim.rotated((float(i)-1.5)*0.18)
+				var missile := _power_bullet(dir,235,4,col)
+				if not targets.is_empty():
+					missile.homing_target = targets[i%targets.size()]
+					missile.homing_strength = 4.3
+				missile.life = 1.7
+		"online_nova":
+			for i in 8:
+				var dir: Vector2 = Vector2.RIGHT.rotated(TAU*float(i)/8.0)
+				var orb := _power_bullet(dir,275,4,col)
+				orb.life = 0.78
+			FxScript.ring(get_parent(),global_position+Vector2(0,-12),col,8,46,0.24)
+		"online_saw":
+			for i in 2:
+				var dir: Vector2 = aim.rotated((-0.12 if i==0 else 0.12))
+				var saw := _power_bullet(dir,310,6,col)
+				saw.effect = "sierra"
+				saw.origin = self
+				saw.pierce = true
+				saw.pierce_left = 2
+				saw.life = 1.55
+		"online_void":
+			var void_shot := _power_bullet(aim,175,15,col)
+			void_shot.pierce = true
+			void_shot.pierce_left = 6
+			void_shot.heavy = true
+			void_shot.life = 2.0
+	AudioManager.play("charged",-8)
+	FxScript.muzzle(get_parent(),_muzzle_pos(),false,aim.angle(),col)
 
 func _fire_special_primary() -> void:
 	var count := 3 if weapon=="drones" else (2 if weapon=="needles" else 1)
@@ -753,6 +846,7 @@ func take_damage(amount: int, from_pos: Vector2) -> void:
 	amount = maxi(1,amount-armor_level-(1 if character=="red" else 0))
 	if not alive or _invuln > 0.0:
 		return
+	online_regen_clock = 0.0
 	_invuln = 1.1
 	GameManager.damage_player(index, amount)
 	AudioManager.play("hurt", -6.0)

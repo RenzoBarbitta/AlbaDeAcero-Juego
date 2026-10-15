@@ -7,6 +7,11 @@ extends EnemyBase
 
 signal defeated
 
+const Patterns := preload("res://scripts/enemies/boss_patterns.gd")
+var attack_target := Vector2.ZERO
+var _tell_length := 0.9
+var encounter_history: Array = []
+
 const BossVisualScript := preload("res://scripts/enemies/boss_visual.gd")
 const BulletScript := preload("res://scripts/projectiles/bullet.gd")
 const WalkerScript := preload("res://scripts/enemies/walker.gd")
@@ -18,7 +23,7 @@ const TEX_BOMB := preload("res://assets/sprites/fx/bullet_bomb.png")
 const TELLS := {
 	"dash": 0.50, "jump": 0.45, "spread": 0.30, "burst": 0.30,
 	"ring": 0.35, "spiral": 0.30, "homing": 0.35, "bomb": 0.40,
-	"summon": 0.50, "sweep": 0.35, "teleport": 0.40,
+	"summon": 0.50, "sweep": 0.35, "teleport": 0.40, "omega": 0.62,
 }
 
 var boss_id := ""
@@ -52,8 +57,9 @@ var active := false
 
 func _ready() -> void:
 	if boss_id=="": boss_id = GameManager.selected_boss
-	_cfg = GameManager.BOSSES.get(boss_id, GameManager.BOSSES["sierra"])
-	_abilities = _cfg.get("abilities", ["spread"])
+	_cfg = GameManager.BOSSES.get(boss_id, GameManager.BOSSES["sierra"]).duplicate(true)
+	_abilities = Patterns.moves(boss_id).duplicate()
+	_cfg["tip"] = Patterns.COUNTERS.get(boss_id,"")
 	_color = _cfg.get("color", Color.WHITE)
 	_mode = _cfg.get("mode", "air")
 	max_health = int(_cfg.get("hp", 80))
@@ -68,7 +74,7 @@ func _ready() -> void:
 	_visual.position = Vector2(0, -16)
 	_visual.z_index = 1
 	add_child(_visual)
-	add_body_shape(30, 32, -16)
+	add_body_shape(42 if boss_id in ["coloso","estruendo"] else 30,36 if boss_id=="coloso" else 32,-18 if boss_id=="coloso" else -16)
 	collision_mask = 1
 	_base_y = global_position.y
 	_base_x = global_position.x
@@ -83,6 +89,7 @@ func activate() -> void:
 	GameManager.boss_health_changed.emit(health, max_health, true)
 	GameManager.boss_activated.emit(boss_id, str(_cfg["name"]))
 	GameManager.banner("¡PELIGRO!", "%s · %s" % [_cfg.get("name", "JEFE"), _cfg.get("epithet", "")], _color)
+	GameManager.toast(str(_cfg["tip"]),_color)
 	AudioManager.play("boss_roar", -4.0)
 	GameManager.shake(4.0)
 	FxScript.ring(get_parent(), global_position + Vector2(0, -16), Color(_color.r, _color.g, _color.b, 0.9), 6.0, 80.0, 0.5)
@@ -91,6 +98,10 @@ func _physics_process(delta: float) -> void:
 	if dead or not active:
 		return
 	_t += delta
+	_visual.motion = velocity.x
+	_visual.motion_state = _phase
+	_visual.clock = _phase_t
+	_visual.shielded = boss_id=="enjambre" and _live_pods()>0
 	contact_damage = int(_cfg.get("contact", 9)) + _contact_bonus
 	if use_gravity:
 		apply_gravity(delta)
@@ -102,6 +113,7 @@ func _physics_process(delta: float) -> void:
 		_dir = signi(int(signf(player.global_position.x - global_position.x)))
 		if _dir == 0:
 			_dir = 1
+		facing = _dir
 		_visual.scale.x = -1.0 if _dir < 0 else 1.0
 
 	# Ráfagas pendientes (spread/burst): se resuelven en sub-pasos guiados
@@ -146,8 +158,14 @@ func _begin_next() -> void:
 		_abilities = ["spread"]
 	_act = String(_abilities[_abil_i % _abilities.size()])
 	_abil_i += 1
+	encounter_history.append(_act)
+	attack_target = Patterns.target(self)
+	var limits := Patterns.bounds(self)
+	attack_target.x = clampf(attack_target.x,limits.x+24,limits.y-24)
 	_phase = "tell"
-	_phase_t = float(TELLS.get(_act, 0.35)) * (0.7 if _rage else 1.0)
+	_tell_length = (1.1 if boss_id in ["coloso","estruendo"] else 0.9)*(0.88 if _rage else 1)
+	_phase_t = _tell_length
+	Patterns.telegraph(self)
 	_visual.action = _act
 	_visual.phase = 0
 	# Aviso: anillo de color + sonido de carga
@@ -157,112 +175,49 @@ func _begin_next() -> void:
 
 func _execute() -> void:
 	_visual.phase = 1
-	match _act:
-		"dash":
-			# Embestida lateral telegrafiada
-			_phase = "act"
-			_phase_t = 0.85
-			_dash_dir = _dir
-			_dash_speed = 360.0 if _rage else 300.0
-			_contact_bonus = 4
-			AudioManager.play("dash", -8.0)
-		"jump":
-			# Salto alto que genera onda de choque al caer
-			_phase = "act"
-			_phase_t = 2.4
-			velocity.y = -430.0
-			velocity.x = _dir * 150.0
-			_contact_bonus = 3
-			AudioManager.play("jump", -8.0)
-		"teleport":
-			# Parpadeo y reaparición al otro lado del jugador + anillo
-			_teleport_burst()
-			_end_act()
-		"summon":
-			_summon()
-			_end_act()
-		"bomb":
-			_drop_bombs()
-			_end_act()
-		"sweep":
-			_sweep()
-			_end_act()
-		"spread":
-			_burst_left = 5 if _rage else 3
-			_burst_ang = -0.38
-			_burst_step = 0.19
-			_burst_cd = 0.0
-			_visual.action = ""
-			_visual.phase = 0
-			_phase = "wait"
-			_phase_t = 0.35
-		"burst":
-			_burst_left = 6 if _rage else 4
-			_burst_ang = -0.15
-			_burst_step = 0.1
-			_burst_cd = 0.0
-			_visual.action = ""
-			_visual.phase = 0
-			_phase = "wait"
-			_phase_t = 0.35
-		"ring":
-			_fire_ring(12 if _rage else 8)
-			_end_act()
-		"spiral":
-			_spiral_stream()
-			_end_act()
-		"homing":
-			_fire_homing(4 if _rage else 3)
-			_end_act()
-		_:
-			_fire_aimed(null, 0.0, 200.0)
-			_end_act()
+	_phase = "act"
+	_phase_t = Patterns.execute(self)
+	var cue: Array = Patterns.SOUNDS.get(boss_id,["enemy_shoot",1.0])
+	AudioManager.play(str(cue[0]),-10,float(cue[1]))
+
 
 func _end_act() -> void:
 	_phase = "wait"
-	_phase_t = randf_range(0.55, 0.95) * (0.6 if _rage else 1.0)
+	_phase_t = (1.35 if boss_id in ["coloso","estruendo"] else 0.95) * (0.85 if _rage else 1.0)
 	_visual.action = ""
 	_contact_bonus = 0
 
 ## Ejecución continua de las habilidades con duración (dash / jump).
 func _run_act(delta: float, _player: Node) -> void:
 	_phase_t -= delta
-	if _act == "dash":
-		velocity.x = float(_dash_dir) * _dash_speed
-		if not use_gravity:
-			velocity.y = sin(_t * 9.0) * 24.0
-		# estela de la sierra / choque contra la pared del arena
-		if int(_t * 30.0) % 2 == 0:
-			FxScript.spark(get_parent(), global_position + Vector2(-_dash_dir * 14.0, -6.0), _color)
-		if is_on_wall() or _phase_t <= 0.0:
-			if is_on_wall():
-				_shock_pending = true
-			_end_act()
-		return
-	if _act == "jump":
-		if is_on_floor() and _was_falling():
-			_shock_pending = true
-			_end_act()
-		elif _phase_t <= 0.0:
-			_end_act()
-		return
-	_end_act()
+	Patterns.tick(self,delta)
+	if _act=="quarry_slam" and is_on_floor() and _was_falling():
+		_shock_pending = true
+		_end_act()
+	elif _phase_t<=0: _end_act()
 
 func _was_falling() -> bool:
 	# _prev_vy se guarda justo antes de move_and_slide: positivo = cayendo.
 	return _prev_vy > 0.0
 
 func _move_idle(delta: float) -> void:
-	var speed: float = _cfg.get("speed", 26.0)
-	if use_gravity:
-		if is_on_floor():
-			velocity.x = move_toward(velocity.x, _dir * speed, 500.0 * delta)
+	var speed: float = float(_cfg.get("speed",26))
+	var distance := global_position.distance_to(Patterns.target(self))
+	if boss_id=="estruendo":
+		velocity.x = move_toward(velocity.x,-_dir*speed if distance<110 else 0,delta*90)
+	elif boss_id=="coloso":
+		velocity.x = move_toward(velocity.x,_dir*speed*0.65,delta*75)
+	elif boss_id=="sierra":
+		velocity.x = move_toward(velocity.x,_dir*speed*1.3,delta*350)
 	else:
-		velocity.x = lerpf(velocity.x, _dir * speed, clampf(4.0 * delta, 0.0, 1.0))
+		var desired := -_dir*speed if distance<110 else _dir*speed*0.6
+		velocity.x = move_toward(velocity.x,desired,delta*100)
 
 func _hover(_delta: float) -> void:
-	var target_y := _base_y + sin(_t * 1.6) * 10.0
-	velocity.y = (target_y - global_position.y) * 3.0
+	if _phase=="act" and _act=="fire_dive": return
+	var amplitude := 16.0 if boss_id in ["glaciar","enjambre"] else 6.0
+	var target_y := _base_y+sin(_t*(2.4 if boss_id=="enjambre" else 1.3))*amplitude
+	velocity.y = (target_y-global_position.y)*3
 
 func _dampen(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, 0.0, 480.0 * delta)
@@ -314,6 +269,30 @@ func _fire_homing(n: int) -> void:
 		get_parent().add_child(b)
 	AudioManager.play("enemy_shoot", -10.0)
 
+func _omega_barrage() -> void:
+	# Ataque exclusivo del Nucleo Omega: dos coronas contrarrotadas y misiles
+	# dirigidos a distintos pilotos. Obliga al equipo a separarse y reposicionarse.
+	_fire_ring(16 if _rage else 12)
+	_spiral += PI/12.0
+	_fire_ring(12 if _rage else 8)
+	var players: Array = []
+	for p in get_tree().get_nodes_in_group("player"):
+		if p.has_method("is_alive") and p.is_alive(): players.append(p)
+	for i in players.size():
+		var target: Node2D = players[i] as Node2D
+		if target == null:
+			continue
+		var spread_angle: float = (float(i) - (float(players.size()) - 1.0) * 0.5) * 0.18
+		var dir: Vector2 = (target.global_position - global_position).normalized().rotated(spread_angle)
+		var b := BulletScript.create(TEX_BULLET,global_position+Vector2(0,-14),dir,115.0,8,false,1.35)
+		b.color = _color
+		b.homing_target = target
+		b.homing_strength = 2.8 if _rage else 2.1
+		b.life = 4.5
+		get_parent().add_child(b)
+	GameManager.shake(3.5)
+	AudioManager.play("boss_roar",-10.0,1.15)
+
 func _drop_bombs() -> void:
 	var offs := [-0.5, -0.25, 0.0, 0.25, 0.5] if _rage else [-0.4, 0.0, 0.4]
 	for i in offs:
@@ -359,7 +338,7 @@ func _summon() -> void:
 	var n := 3 if _rage else 2
 	for i in n:
 		var f := preload("res://scripts/enemies/zone_enemy.gd").new()
-		f.zone = GameManager.theme_id
+		f.zone = "biolab" if boss_id=="enjambre" else "central"
 		f.airborne = true
 		f.position = global_position + Vector2(randf_range(-40, 40), randf_range(-30, -10))
 		get_parent().add_child(f)
@@ -396,7 +375,12 @@ func _nearest_player() -> Node2D:
 func take_damage(amount: int, from_pos: Vector2) -> void:
 	if not active:
 		return
-	super.take_damage(amount, from_pos)
+	var actual := amount
+	if boss_id=="estruendo" and _phase!="wait" and (from_pos.x-global_position.x)*_dir>0:
+		actual = maxi(1,roundi(amount*0.65))
+	if boss_id=="enjambre" and _live_pods()>0: actual = maxi(1,ceili(actual*0.6))
+	if _phase=="wait" and boss_id in ["sierra","coloso"]: actual = ceili(amount*1.3)
+	super.take_damage(actual, from_pos)
 	_flash = 0.1
 	if _visual:
 		_visual.modulate = Color(6, 6, 6)
@@ -414,17 +398,11 @@ func _enter_rage() -> void:
 	GameManager.shake(4.0)
 	AudioManager.play("boss_roar", -6.0)
 	FxScript.ring(get_parent(), global_position + Vector2(0, -16), Color(1, 0.3, 0.2, 0.95), 8.0, 90.0, 0.5)
-	# Contragolpe: anillo de balas + embestida rápida
-	_fire_ring(10)
+	# Each identity enters its own second-phase opening, with a full readable warning.
 	_burst_left = 0
-	_act = "dash"
-	_phase = "act"
-	_phase_t = 0.8
-	_dash_dir = _dir
-	_dash_speed = 380.0
-	_contact_bonus = 5
-	_visual.action = "dash"
-	_visual.phase = 1
+	_abil_i = 2
+	_contact_bonus = 0
+	_begin_next()
 
 func _process(delta: float) -> void:
 	if _flash > 0.0:
@@ -446,3 +424,9 @@ func die() -> void:
 	super.die()
 
 
+
+func _live_pods() -> int:
+	var count := 0
+	for h in get_tree().get_nodes_in_group("boss_hazard"):
+		if h.kind=="pod" and not h.dead and h.source and h.source.get_ref()==self: count += 1
+	return count

@@ -7,7 +7,7 @@ var local_index := 0
 var local_shop_open := false
 var room_code := ""
 var peer_ready := false
-var status := "CONFIGURA EL SERVIDOR DE SALAS"
+var status := "SERVIDOR PUBLICO LISTO / CREA O ENTRA A UNA SALA"
 var server_url := ""
 var remote_input := {}
 var remote_profile := "red"
@@ -15,6 +15,8 @@ var peer_slot := 0
 var slots: Array = [0]
 var match_slots: Array = [0]
 var profiles := {}
+var peer_versions := {}
+const NETWORK_VERSION := 2
 var profile_mobility := {}
 var remote_inputs := {}
 var input_sequences := {}
@@ -31,20 +33,13 @@ const DEFAULT_URL := "wss://albadeacero-juego.onrender.com"
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
-	var cfg := ConfigFile.new()
-	if cfg.load("user://online.cfg") == OK:
-		server_url = str(cfg.get_value("online","server",DEFAULT_URL))
-		if server_url.strip_edges()=="" or server_url in ["ws://127.0.0.1:8787","ws://localhost:8787"]:
-			server_url = DEFAULT_URL
-			cfg.set_value("online","server",DEFAULT_URL)
-			cfg.save("user://online.cfg")
-	else:
-		cfg.set_value("online","server",DEFAULT_URL)
-		cfg.save("user://online.cfg")
-		server_url = DEFAULT_URL
+	# La URL publica queda embebida y nunca aparece en la interfaz.
+	# ALBA_RELAY_URL permite seguir usando un relay local durante desarrollo/tests.
+	server_url = DEFAULT_URL
 	var override := OS.get_environment("ALBA_RELAY_URL")
 	if override != "":
 		server_url = override
+	status = "SERVIDOR PUBLICO LISTO / CREA O ENTRA A UNA SALA"
 
 func is_authority() -> bool:
 	return not online or host
@@ -90,6 +85,7 @@ func disconnect_room() -> void:
 	input_sequences.clear()
 	input_ages.clear()
 	profiles.clear()
+	peer_versions.clear()
 	profile_mobility.clear()
 	slots = [0]
 	world = null
@@ -99,6 +95,7 @@ func disconnect_room() -> void:
 	_input_sequence = 0
 
 func send_packet(packet: Dictionary) -> void:
+	if packet.get("type","")=="profile": packet["version"] = NETWORK_VERSION
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
 		socket.send_text(JSON.stringify(packet))
 
@@ -109,13 +106,18 @@ func start_match() -> void:
 		return
 	match_slots = slots.map(func(value): return int(value))
 	match_slots.sort()
+	for slot in match_slots:
+		if int(slot)!=0 and int(peer_versions.get(str(int(slot)),0))!=NETWORK_VERSION:
+			status = "TODOS DEBEN ACTUALIZAR EL JUEGO PARA ESTA PARTIDA"
+			status_changed.emit()
+			return
 	var pilots: Array = []
 	for slot in match_slots: pilots.append(GameManager.character if int(slot)==0 else profiles.get(str(int(slot)),"red"))
 	GameManager.party_mobility.clear()
 	for slot in match_slots: GameManager.party_mobility.append(GameManager.mobility.duplicate() if slot==0 else profile_mobility.get(str(slot),[]))
 	GameManager.party_characters = pilots
 	GameManager.character2 = pilots[1] if pilots.size()>1 else "red"
-	var config := {"boss":GameManager.selected_boss,"p1":GameManager.character,"p2":GameManager.character2,"powers":GameManager.acquired_powers,"pilots":pilots,"slots":match_slots,"horde":GameManager.horde_mode,"mobility":GameManager.mobility,"pilot_mobility":GameManager.party_mobility}
+	var config := {"version":NETWORK_VERSION,"boss":GameManager.selected_boss,"p1":GameManager.character,"p2":GameManager.character2,"powers":GameManager.acquired_powers,"pilots":pilots,"slots":match_slots,"horde":GameManager.horde_mode,"mobility":GameManager.mobility,"pilot_mobility":GameManager.party_mobility}
 	send_packet({"type":"start","config":config})
 	GameManager.start_stage()
 
@@ -183,6 +185,7 @@ func receive(packet: Dictionary) -> void:
 			status = "%d/4 CONECTADOS / CODIGO %s" % [slots.size(),room_code]
 			status_changed.emit()
 		"profile":
+			peer_versions[str(int(packet.get("sender",1)))] = int(packet.get("version",0))
 			if GameManager.CHARACTERS.has(packet.get("pilot","")):
 				profile_mobility[str(int(packet.get("sender",1)))] = packet.get("mobility",[]).filter(func(id): return id in ["double_jump","jetpack"])
 				remote_profile = packet["pilot"]
@@ -200,6 +203,10 @@ func receive(packet: Dictionary) -> void:
 				input_ages[key] = 0.0
 				_silence = 0
 		"start":
+			if int(packet.get("config",{}).get("version",0))!=NETWORK_VERSION:
+				status = "EL ANFITRION USA OTRA VERSION / ACTUALICEN EL JUEGO"
+				status_changed.emit()
+				return
 			var config: Dictionary = packet["config"]
 			GameManager.coop = true
 			GameManager.selected_boss = config["boss"]

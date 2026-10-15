@@ -1,6 +1,12 @@
 extends RefCounted
 static func build(stage: Node2D,x: float,width: float) -> void:
 	stage._ground(x,width)
+	var detail := preload("res://scripts/world/scene_landmarks.gd").new()
+	detail.position.x = x
+	detail.zone = stage.theme_id
+	detail.span = width
+	detail.act = 3
+	stage.add_child(detail)
 	var ratio := width/400.0
 	var layouts := {
 		"fundicion":[Vector2(55,110),Vector2(170,70),Vector2(290,110)],

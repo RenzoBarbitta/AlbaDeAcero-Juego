@@ -4,12 +4,20 @@ var pilot := "orange"
 var actor: Node2D
 var t := 0.0
 var preview_pose := ""
+var gait := 0.0
+var _step_bucket := 0
 const INK := Color("080f20")
 const STEEL := Color("91b5c8")
 const LIGHT := Color("def7ff")
 
 func _process(delta: float) -> void:
 	t += delta
+	var speed := absf(actor.velocity.x) if is_instance_valid(actor) else (90.0 if preview_pose=="run" else 0.0)
+	gait += speed*delta/11.5
+	var bucket := floori(gait/PI)
+	if bucket!=_step_bucket and is_instance_valid(actor) and actor.alive and actor.is_on_floor() and speed>65:
+		preload("res://scripts/fx/fx.gd").spark(actor.get_parent(),actor.global_position+Vector2(-actor.facing*4,-1),Color("89a3ad"))
+	_step_bucket = bucket
 	queue_redraw()
 
 func plate(points: Array, col: Color) -> void:
@@ -33,12 +41,12 @@ func limb(a: Vector2,b: Vector2,c: Color,width: float) -> void:
 	draw_circle(a,width*0.42,STEEL.darkened(0.55))
 
 func leg_pose(running: bool,air: bool,dash: bool) -> Dictionary:
-	var phase := sin(t*14.0) if running and not air else 0.0
+	var phase := sin(gait) if running and not air else 0.0
 	var lift_a := maxf(0,phase)*5.0
 	var lift_b := maxf(0,-phase)*5.0
 	# Cada pierna conserva su carril: cadera, rodilla y pie avanzan juntos.
-	var a := Vector2(-5+phase*0.9,-1-lift_a)
-	var b := Vector2(5-phase*0.9,-1-lift_b)
+	var a := Vector2(-5+phase*1.8,-1-lift_a)
+	var b := Vector2(5-phase*1.8,-1-lift_b)
 	if air:
 		a = Vector2(-5,-8)
 		b = Vector2(5,-4)
@@ -75,7 +83,7 @@ func _draw() -> void:
 	var heavy := pilot in ["red","white","gold"]
 	var w := 7.5 if heavy else (5.0 if pilot == "black" else 6.0)
 	var breath := sin(t*3)*0.35
-	if running and not air: breath = -absf(sin(t*14))*0.9
+	if running and not air: breath = -absf(sin(gait))*1.1
 	if is_instance_valid(actor): breath += actor.landing_squash*2
 	var lean := 0.16 if running else -0.025
 	if dash:

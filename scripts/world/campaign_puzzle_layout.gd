@@ -23,15 +23,16 @@ static func build(stage: Node2D,puzzle: Node2D,origin: float,chapter: int) -> vo
 	deck_data.append([970,150,108])
 	for i in puzzle.nodes.size():
 		var at: Vector2 = puzzle.nodes[i]+Vector2(origin,0)
-		stage._architecture(at.x-70,at.y,140,16)
+		if puzzle.rule not in ["warmth","courier"] or i==0: stage._architecture(at.x-70,at.y,140,16)
 		if i in [2,4]: stage._spawn_air(at.x,at.y-70)
 	var art := preload("res://scripts/world/campaign_room_art.gd").new()
 	art.position.x = origin
 	art.zone = stage.theme_id
-	art.room = {"title":"", "span":1024, "decks":deck_data}
+	art.room = {"title":"", "span":1024, "decks":[deck_data[0],deck_data[1],deck_data[-1]] if puzzle.rule in ["warmth","courier"] else deck_data}
 	stage.add_child(art)
 	# Looped lifts allow revisiting objectives in any order, including return trips with cargo.
 	for i in range(deck_data.size()-1):
+		if puzzle.rule in ["warmth","courier"]: continue
 		var a: Array = deck_data[i]
 		var b: Array = deck_data[i+1]
 		var gap := absf(float(b[0])-float(a[0]))-(float(a[2])+float(b[2]))*0.5
@@ -53,7 +54,7 @@ static func build(stage: Node2D,puzzle: Node2D,origin: float,chapter: int) -> vo
 		var ferry: MovingPlatform = stage._add_moving(start.x,start.y,FERRY_W,end-start,2.5)
 		ferry.skin = stage.theme_id
 	if puzzle.rule in ["warmth","courier"]:
-		var start: Vector2 = puzzle.global_position+puzzle.escort_position()-Vector2(38,8)
+		var start: Vector2 = puzzle.global_position+puzzle.escort_position()-Vector2(38,40)
 		var carrier: MovingPlatform = stage._add_moving(start.x,start.y,76,Vector2.ZERO,1)
 		carrier.motion.kill()
 		carrier.skin = stage.theme_id
@@ -86,7 +87,7 @@ static func build_first(stage: Node2D,puzzle: Node2D,origin: float) -> void:
 	for at in puzzle.control_positions:
 		decks.append([at.x,at.y,140])
 		if at.y!=150: stage._architecture(origin+at.x-70,at.y,140,16)
-		if at.y<70:
+		if at.y<110:
 			var lift: MovingPlatform = stage._add_moving(origin+at.x+78,150,48,Vector2(0,at.y-150),2.5)
 			lift.skin = stage.theme_id
 	var art := preload("res://scripts/world/campaign_room_art.gd").new()

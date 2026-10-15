@@ -33,10 +33,18 @@ func _draw() -> void:
 					for y in range(88,145,12): draw_line(Vector2(x+6,y),Vector2(x+34,y),c.darkened(0.2),2)
 	# Elevator shaft: moving girders make ascent legible while the camera stays with the cabin.
 	draw_rect(Rect2(400,-270,160,420),Color("050b13"))
-	var shift: float = stage.lift_progress*560
+	var shift: float = stage.lift_progress*980
 	for y in range(-350,230,70):
 		var at := fposmod(float(y)+shift+350,560)-350
 		draw_line(Vector2(404,at),Vector2(556,at),Color("263647"),5)
+		# luminarias del hueco bajan rapido durante el trayecto
+		draw_rect(Rect2(410,at+10,8,18),Color(c,0.28))
+		draw_rect(Rect2(542,at+10,8,18),Color(c,0.28))
+	if stage.phase=="transit":
+		for y in range(-250,170,46):
+			var streak := fposmod(float(y)+shift*1.7+250,460)-250
+			draw_line(Vector2(390,streak),Vector2(390,streak+24),Color("8fe7ff",0.35),2)
+			draw_line(Vector2(570,streak-18),Vector2(570,streak+8),Color("8fe7ff",0.35),2)
 	for x in [403,555]: draw_line(Vector2(x,-270),Vector2(x,150),Color("637481"),3)
 	# Cabin with four visibly separate standing places; unused slots remain dark.
 	draw_rect(Rect2(400,38,160,112),Color("263b4e"))

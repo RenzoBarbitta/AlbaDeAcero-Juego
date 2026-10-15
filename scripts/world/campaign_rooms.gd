@@ -458,7 +458,7 @@ const ROOMS := {
           180
         ]
       ],
-      "links": "sssjdd",
+      "links": "ssssdd",
       "devices": [
         [
           "wind",
@@ -610,7 +610,7 @@ const ROOMS := {
           200
         ]
       ],
-      "links": "sssjdd",
+      "links": "ssssdd",
       "devices": [
         [
           "vent",

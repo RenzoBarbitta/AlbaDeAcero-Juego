@@ -13,6 +13,13 @@ static func build(stage: Node2D,origin: float,act: int) -> float:
 	art.zone = stage.theme_id
 	art.players = stage._players
 	stage.add_child(art)
+	var detail := preload("res://scripts/world/scene_landmarks.gd").new()
+	detail.zone = stage.theme_id
+	detail.position.x = origin
+	detail.span = float(room["span"])
+	detail.act = act
+	detail.decks = decks
+	stage.add_child(detail)
 	for i in decks.size():
 		var d: Array = decks[i]
 		var at := Vector2(origin+float(d[0]),float(d[1]))
@@ -25,7 +32,7 @@ static func build(stage: Node2D,origin: float,act: int) -> float:
 		else: stage._architecture(at.x-width*0.5,at.y,width,16)
 		if i>0 and i<decks.size()-1:
 			if i%2==0: stage._route_checkpoint(at)
-			if i%2==1: stage._spawn_ground(at.x+width*0.3,at.y)
+			stage._spawn_ground(at.x+width*0.3,at.y)
 			if i%3==2: stage._spawn_air(at.x-20,at.y-70)
 			stage._pickup("chip",at.x,at.y-18)
 		if i==decks.size()-1: continue

@@ -9,13 +9,19 @@ Abrí `project.godot` en Godot y ejecutá la escena principal.
 **Expedición**: campaña individual con ocho recorridos diseñados por zona,
 checkpoints, rutas verticales, poderes de jefes y secretos.
 
-**Hordas online (modo principal)**: de uno a cuatro pilotos, cada uno en su PC y con cámara propia. Salas con código, oleadas que escalan con el tamaño del equipo, jefes cada tres rondas y créditos personales. Entre rondas, B abre el taller: potencia, blindaje, cadencia, reparación, doble salto y jetpack. Las mejoras compradas duran esa partida. E rescata y F activa la fusión. En oleadas pares, dos pilotos pueden mantener los aros opuestos durante seis segundos para obtener un bonus de créditos para todo el equipo; jugando solo basta un aro.
+**Hordas online (modo principal)**: de uno a cuatro pilotos, cada uno en su PC y con cámara propia. Salas con código, oleadas que escalan con el tamaño del equipo, jefes en los pisos 5, 10, 15, 20, 25, 30, 35 y 40, mas Nucleo Omega en el 41 y créditos personales. Entre rondas, B abre el taller: potencia, blindaje, cadencia, reparación, doble salto y jetpack. Las mejoras compradas duran esa partida. E rescata y F activa la fusión. En oleadas pares, dos pilotos pueden mantener los aros opuestos durante seis segundos para obtener un bonus de créditos para todo el equipo; jugando solo basta un aro.
 
 En la pantalla de salas, **ENTRENAR SOLO** permite probar las hordas sin servidor ni conexión. No abre cooperativo local.
 
 El juego usa `wss://albadeacero-juego.onrender.com`. USAR SERVIDOR PUBLICO restaura esa direccion. El despliegue inicial fallo porque Render no encontraba Dockerfile en la raiz; la correccion se publico en el commit `50ed8b5`. Render ya responde y cuatro procesos de Godot verificaron las salas, controles, compras y ascenso contra el servidor publico.
 
 Las hordas avanzan piso por piso dentro de un edificio. Al despejar un piso, B abre mejoras; cada piloto entra en la cabina central y pulsa E para confirmar. Hay cuatro puestos, pero se cuentan solo los pilotos conectados: sirve para partidas de uno, dos, tres o cuatro. Las puertas se cierran, el ascensor sube y comienza el siguiente combate. Se conservan creditos y mejoras. Un invitado que se desconecte no bloquea al resto; si se va el anfitrion, termina la conexion. Ocho distribuciones de pisos se alternan y la dificultad crece con la oleada y los participantes. Cuatro procesos independientes de Godot verificaron este flujo contra el relay local.
+
+## Combate e identidad visual
+
+Los nueve jefes tienen tres acciones propias, avisos antes del dano y fases finales diferentes. AnimationPlayer controla anticipacion, ataque y recuperacion; cada armadura tiene piezas articuladas y una silueta especifica. Enjambre protege nidos que se pueden destruir disparando, Estruendo usa morteros balisticos, Voltaje alterna rieles altos y bajos y Sierra recupera sus discos. Ver [direccion de combate y arte](docs/IDENTIDAD_COMBATE.md).
+
+Los 24 sectores, las arenas y las alas de la torre incluyen maquinaria o elementos naturales animados. Los pasos de los pilotos siguen la velocidad de desplazamiento. Los nuevos ataques y sus avisos se replican online; todos los participantes deben usar esta version del juego.
 
 ## Ocho pilotos y progresión
 
