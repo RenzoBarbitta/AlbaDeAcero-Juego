@@ -24,6 +24,8 @@ var effect := ""
 var origin: Node2D
 var _age := 0.0
 var _hit_targets: Array[int] = []
+var salvo_hits := {}
+var salvo_cap := 0
 var _ignored_rids: Array[RID] = []
 var launch_from := Vector2.ZERO
 var sweep_launch := false
@@ -64,6 +66,7 @@ static func create(tex: Texture2D, pos: Vector2, dir: Vector2, speed: float,
 	return b
 
 func _ready() -> void:
+	add_to_group("net_entity")
 	area_entered.connect(_on_area_entered)
 	body_entered.connect(_on_body_entered)
 	if from_player and damage >= 6:
@@ -154,6 +157,10 @@ func _on_area_entered(area: Area2D) -> void:
 		_burst()
 
 func _damage(target: Node, at: Vector2) -> void:
+	var key := target.get_instance_id()
+	if salvo_cap>0:
+		if int(salvo_hits.get(key,0))>=salvo_cap: return
+		salvo_hits[key] = int(salvo_hits.get(key,0))+1
 	_hit_targets.append(target.get_instance_id())
 	var prior_health: int = target.health if target is EnemyBase else -1
 	if target.has_method("receive_projectile"):

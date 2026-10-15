@@ -6,6 +6,55 @@ extends CharacterBody2D
 
 signal died(index: int)
 var network_active := true
+var last_input_seq := 0
+var last_input_ms := 0
+var _prediction_history := {}
+var _prediction_previous := {}
+var _predict_input := {}
+var _weapon_lock := 0.0
+var _salvo_hits := {}
+var _salvo_cap := 0
+
+func predicting() -> bool:
+	return NetSession.online and not NetSession.host and index==NetSession.local_index
+
+func reconcile(at: Vector2,speed: Vector2,ack: int,living: bool) -> void:
+	if not predicting(): return
+	if not living or not alive or position.distance_to(at)>110:
+		position = at
+		velocity = speed
+		_prediction_history.clear()
+		return
+	if _prediction_history.has(ack):
+		var correction: Vector2 = at-_prediction_history[ack]
+		if correction.length()>2:
+			position += correction
+			for key in _prediction_history: _prediction_history[key] += correction
+	for key in _prediction_history.keys():
+		if int(key)<=ack: _prediction_history.erase(key)
+
+func _predict_movement(delta: float) -> void:
+	if GameManager.state!=GameManager.State.PLAYING: return
+	if GameManager.horde_mode and NetSession.world.game.level.phase in ["departing","transit"]: return
+	_predict_input = NetSession.capture_input()
+	for action in ["jump","dash"]:
+		_remote_edges[action] = bool(_predict_input.get(action,false)) and not bool(_prediction_previous.get(action,false))
+		_remote_released[action] = not bool(_predict_input.get(action,false)) and bool(_prediction_previous.get(action,false))
+	_update_timers(delta)
+	if _dash_time>0: _do_dash(delta)
+	else:
+		_do_move(delta)
+		_do_gravity(delta)
+		_do_jump(delta)
+		_do_jetpack(delta)
+	move_and_slide()
+	net_on_floor = is_on_floor()
+	var direction: Array = _predict_input.get("aim",[float(facing),0.0])
+	aim = Vector2(direction[0],direction[1])
+	if absf(aim.x)>0.1: facing = int(signf(aim.x))
+	_prediction_previous = _predict_input.duplicate()
+	_prediction_history[NetSession._input_sequence] = position
+	while _prediction_history.size()>120: _prediction_history.erase(_prediction_history.keys()[0])
 
 const BulletScript := preload("res://scripts/projectiles/bullet.gd")
 const FxScript := preload("res://scripts/fx/fx.gd")
@@ -42,9 +91,9 @@ const CHARGE_L1 := 0.32
 const CHARGE_L2 := 0.82
 const CHARGE_L3 := 1.5
 const PULSE_COOLDOWN := 0.13
-const SPREAD_COOLDOWN := 0.20
-const LASER_COOLDOWN := 0.09
-const PLASMA_COOLDOWN := 0.40
+const SPREAD_COOLDOWN := 0.42
+const LASER_COOLDOWN := 0.20
+const PLASMA_COOLDOWN := 0.60
 
 var index := 0
 var facing := 1
@@ -74,18 +123,21 @@ var _remote_edges := {}
 var _remote_released := {}
 
 func pressed(action: String) -> bool:
+	if predicting(): return bool(_predict_input.get(action,false))
 	if NetSession.local_shop_open and index==(NetSession.local_index if NetSession.online else 0): return false
 	if NetSession.online and NetSession.host and index > 0:
 		return bool(NetSession.input_for(index).get(action,false))
 	return Input.is_action_pressed(_act(action))
 
 func pressed_once(action: String) -> bool:
+	if predicting(): return bool(_remote_edges.get(action,false))
 	if NetSession.local_shop_open and index==(NetSession.local_index if NetSession.online else 0): return false
 	if NetSession.online and NetSession.host and index > 0:
 		return bool(_remote_edges.get(action,false))
 	return Input.is_action_just_pressed(_act(action))
 
 func released_once(action: String) -> bool:
+	if predicting(): return bool(_remote_released.get(action,false))
 	if NetSession.local_shop_open and index==(NetSession.local_index if NetSession.online else 0): return false
 	if NetSession.online and NetSession.host and index > 0:
 		return bool(_remote_released.get(action,false))
@@ -113,6 +165,7 @@ var _charge_t := 0.0
 var _charge_fx: Node = null
 var _charge_pulse := 0.0
 var _shoot_cooldown := 0.0
+var _shot_flash := 0.0
 
 var _invuln := 0.0
 var _spawn_point := Vector2.ZERO
@@ -261,12 +314,15 @@ func shake(amount: float) -> void:
 # Bucle principal
 # ------------------------------------------------------------------
 func _physics_process(delta: float) -> void:
+	if NetSession.online and not NetSession.host:
+		if predicting() and alive: _predict_movement(delta)
+		return
 	if not alive:
 		return
 	if NetSession.online and NetSession.host and index > 0:
 		for action in ["move_left","move_right","aim_up","aim_down","jump","dash","shoot","weapon_switch","interact","team_attack"]:
-			_remote_edges[action] = pressed(action) and not bool(_remote_previous.get(action,false))
-			_remote_released[action] = not pressed(action) and bool(_remote_previous.get(action,false))
+			_remote_edges[action] = (pressed(action) and not bool(_remote_previous.get(action,false))) or bool(NetSession.input_for(index).get("_edges",{}).get(action,false))
+			_remote_released[action] = (not pressed(action) and bool(_remote_previous.get(action,false))) or bool(NetSession.input_for(index).get("_released",{}).get(action,false))
 
 	landing_squash = maxf(0,landing_squash-delta*6)
 	_update_timers(delta)
@@ -291,14 +347,20 @@ func _physics_process(delta: float) -> void:
 	_update_invuln(delta)
 	if NetSession.online and NetSession.host and index > 0:
 		_remote_previous = NetSession.input_for(index).duplicate()
+		last_input_seq = int(_remote_previous.get("seq",0))
+		last_input_ms = int(_remote_previous.get("sent_ms",0))
+		NetSession.input_for(index).erase("_edges")
+		NetSession.input_for(index).erase("_released")
 
 func _update_timers(delta: float) -> void:
+	_weapon_lock = maxf(0,_weapon_lock-delta)
+	_shot_flash = maxf(0,_shot_flash-delta)
 	_coyote = maxf(0.0, _coyote - delta)
 	_jump_buffer = maxf(0.0, _jump_buffer - delta)
 	_dash_cd = maxf(0.0, _dash_cd - delta)
 	_col_cooldown = maxf(0.0, _col_cooldown - delta)
-	var online_fire_mul := 1.35 if has_mobility("overclock") else 1.0
-	_shoot_cooldown = maxf(0.0, _shoot_cooldown - delta*(1+fire_level*0.15)*online_fire_mul)
+	var online_fire_mul := 1.12 if has_mobility("overclock") else 1.0
+	_shoot_cooldown = maxf(0.0, _shoot_cooldown - delta*minf(1.4,(1+fire_level*0.055)*online_fire_mul))
 	if is_on_floor():
 		_coyote = COYOTE_TIME
 
@@ -360,7 +422,7 @@ func _do_jump(_delta: float) -> void:
 		velocity.y = JUMP_VELOCITY
 		_jump_buffer = 0.0
 		_coyote = 0.0
-		AudioManager.play("jump", -10.0)
+		if not predicting(): AudioManager.play("jump", -10.0)
 		FxScript.ring(get_parent(), global_position + Vector2(0, 4), Color(_color.r, _color.g, _color.b, 0.8), 2.0, 12.0, 0.2)
 	elif pressed_once("jump") and not is_on_floor():
 		var allowed_air_jumps := 2 if has_mobility("triple_jump") else (1 if has_mobility("double_jump") else 0)
@@ -388,7 +450,7 @@ func _start_dash() -> void:
 	_dash_time = DASH_TIME * (1.18 if has_mobility("phase_dash") else 1.0)
 	_dash_cd = 0.28 if has_mobility("phase_dash") else DASH_COOLDOWN
 	velocity.y = 0.0
-	AudioManager.play("dash", -10.0)
+	if not predicting(): AudioManager.play("dash", -10.0)
 	FxScript.ring(get_parent(), global_position + Vector2(0, -10), Color(_color.r, _color.g, _color.b, 0.7), 3.0, 16.0, 0.25)
 
 func _do_dash(_delta: float) -> void:
@@ -449,13 +511,13 @@ func _handle_shooting(delta: float) -> void:
 		_cycle_weapon()
 	if GameManager.POWERS.has(weapon):
 		_end_charge()
-		if pressed("shoot") and _shoot_cooldown <= 0:
+		if pressed("shoot") and _weapon_lock<=0 and _shoot_cooldown <= 0:
 			_fire_power()
 			_shoot_cooldown = GameManager.POWERS[weapon]["cooldown"]
 		return
 	if GameManager.ONLINE_WEAPONS.has(weapon):
 		_end_charge()
-		if pressed("shoot") and _shoot_cooldown <= 0:
+		if pressed("shoot") and _weapon_lock<=0 and _shoot_cooldown <= 0:
 			_fire_online_weapon()
 			_shoot_cooldown = float(GameManager.ONLINE_WEAPONS[weapon]["cooldown"])
 		return
@@ -463,27 +525,46 @@ func _handle_shooting(delta: float) -> void:
 	match weapon:
 		"needles","grenade","rail","drones":
 			_end_charge()
-			if pressed("shoot") and _shoot_cooldown<=0:
+			if pressed("shoot") and _weapon_lock<=0 and _shoot_cooldown<=0:
 				_fire_special_primary()
 		"spread":
 			_end_charge()
-			if pressed("shoot") and _shoot_cooldown <= 0.0:
+			if pressed("shoot") and _weapon_lock<=0 and _shoot_cooldown <= 0.0:
 				_fire_spread()
 				_shoot_cooldown = SPREAD_COOLDOWN
 		"laser":
 			_end_charge()
-			if pressed("shoot") and _shoot_cooldown <= 0.0:
+			if pressed("shoot") and _weapon_lock<=0 and _shoot_cooldown <= 0.0:
 				_fire_laser()
 				_shoot_cooldown = LASER_COOLDOWN
 		"plasma":
 			_end_charge()
-			if pressed("shoot") and _shoot_cooldown <= 0.0:
+			if pressed("shoot") and _weapon_lock<=0 and _shoot_cooldown <= 0.0:
 				_fire_plasma()
 				_shoot_cooldown = PLASMA_COOLDOWN
 		_:
 			_shoot_buster(delta)
 
+func _chain_targets(candidates: Array) -> Array:
+	var result: Array = []
+	var from := _muzzle_pos()
+	for enemy in candidates:
+		var to: Vector2 = enemy.global_position+Vector2(0,-8)
+		if from.distance_to(to)>(190 if result.is_empty() else 110): continue
+		if result.is_empty() and aim.dot((to-from).normalized())<0.45: continue
+		if not get_world_2d().direct_space_state.intersect_ray(PhysicsRayQueryParameters2D.create(from,to,1)).is_empty(): continue
+		result.append(enemy)
+		from = to
+		if result.size()>=3: break
+	return result
+
+func _begin_salvo() -> void:
+	_salvo_hits = {}
+	_salvo_cap = int({"spread":3,"drones":2,"glaciar":2,"enjambre":2,"incendio":2,"online_swarm":2,"online_nova":2}.get(weapon,0))
+
 func _fire_online_weapon() -> void:
+	_begin_salvo()
+	_shot_flash = 0.10
 	var cfg: Dictionary = GameManager.ONLINE_WEAPONS[weapon]
 	var col: Color = cfg["color"]
 	var targets: Array = []
@@ -491,19 +572,13 @@ func _fire_online_weapon() -> void:
 		if not enemy.dead and global_position.distance_to(enemy.global_position)<420:
 			targets.append(enemy)
 	targets.sort_custom(func(a,b): return global_position.distance_squared_to(a.global_position)<global_position.distance_squared_to(b.global_position))
+	targets = _chain_targets(targets)
 	match weapon:
 		"online_arc":
 			# Tesla ahora sirve para control de grupos, no para limpiar media oleada.
 			var last: Vector2 = _muzzle_pos()
 			for enemy in targets.slice(0,3):
-				var beam := Line2D.new()
-				beam.points = PackedVector2Array([last,last.lerp(enemy.global_position,0.5)+Vector2(0,-10),enemy.global_position+Vector2(0,-8)])
-				beam.width = 3
-				beam.default_color = col
-				get_parent().add_child(beam)
-				var tween := beam.create_tween()
-				tween.tween_property(beam,"modulate:a",0.0,0.18)
-				tween.tween_callback(beam.queue_free)
+				FxScript.beam(get_parent(),last,enemy.global_position+Vector2(0,-8),col)
 				enemy.take_damage(4,last)
 				GameManager.register_hit()
 				last = enemy.global_position
@@ -548,6 +623,7 @@ func _fire_online_weapon() -> void:
 	FxScript.muzzle(get_parent(),_muzzle_pos(),false,aim.angle(),col)
 
 func _fire_special_primary() -> void:
+	_begin_salvo()
 	var count := 3 if weapon=="drones" else (2 if weapon=="needles" else 1)
 	for i in count:
 		var direction := aim.rotated((i-(count-1)*0.5)*0.16)
@@ -560,7 +636,7 @@ func _fire_special_primary() -> void:
 			shot.effect = "estruendo"
 		if weapon=="rail":
 			shot.pierce = true
-			shot.pierce_left = 7
+			shot.pierce_left = 3
 		if weapon=="drones":
 			var closest: Node2D
 			var distance := 320.0
@@ -572,7 +648,7 @@ func _fire_special_primary() -> void:
 			shot.homing_target = closest
 			shot.homing_strength = 5
 		_spawn_bullet(shot)
-	_shoot_cooldown = {"needles":0.22,"grenade":0.65,"rail":0.55,"drones":0.75}[weapon]
+	_shoot_cooldown = {"needles":0.30,"grenade":0.90,"rail":0.90,"drones":1.10}[weapon]
 	AudioManager.play("shoot",-12)
 
 func _cycle_weapon() -> void:
@@ -586,6 +662,8 @@ func _cycle_weapon() -> void:
 		return
 	var i := ids.find(weapon)
 	weapon = ids[(i + 1) % ids.size()]
+	_weapon_lock = maxf(_weapon_lock,0.25)
+	_shoot_cooldown = maxf(_shoot_cooldown,0.25)
 	_end_charge()
 	GameManager.toast("P%d: %s" % [index+1,GameManager.weapon_name(weapon)],_color)
 	if index == 0:
@@ -596,26 +674,23 @@ func _cycle_weapon() -> void:
 func equip_power(id: String) -> void:
 	weapon = id
 	_end_charge()
-	_shoot_cooldown = 0
+	_weapon_lock = maxf(_weapon_lock,0.25)
+	_shoot_cooldown = maxf(_shoot_cooldown,0.25)
 
 func _fire_power() -> void:
+	_begin_salvo()
+	_shot_flash = 0.10
 	var col: Color = GameManager.BOSSES[weapon]["color"]
 	var targets: Array = []
 	for e in get_tree().get_nodes_in_group("enemy"):
 		if not e.dead and global_position.distance_to(e.global_position) < 300:
 			targets.append(e)
 	targets.sort_custom(func(a,b): return global_position.distance_squared_to(a.global_position) < global_position.distance_squared_to(b.global_position))
+	if weapon=="voltaje": targets = _chain_targets(targets)
 	if weapon == "voltaje":
 		var last := _muzzle_pos()
 		for e in targets.slice(0,3):
-			var beam := Line2D.new()
-			beam.points = PackedVector2Array([last,last.lerp(e.global_position,0.5)+Vector2(4,-8),e.global_position+Vector2(0,-8)])
-			beam.width = 2
-			beam.default_color = col
-			get_parent().add_child(beam)
-			var tween := beam.create_tween()
-			tween.tween_property(beam,"modulate:a",0.0,0.22)
-			tween.tween_callback(beam.queue_free)
+			FxScript.beam(get_parent(),last,e.global_position+Vector2(0,-8),col)
 			e.take_damage(6,last)
 			last = e.global_position
 			GameManager.register_hit()
@@ -671,7 +746,7 @@ func _power_bullet(dir: Vector2, speed: float, dmg: int, col: Color) -> Bullet:
 func _shoot_buster(delta: float) -> void:
 	if pressed_once("shoot"):
 		_start_charge()
-		_fire_buster()
+		if _shoot_cooldown<=0 and _weapon_lock<=0: _fire_buster()
 	if _charging:
 		_charge_t += delta
 		var tier := _charge_tier()
@@ -685,7 +760,7 @@ func _shoot_buster(delta: float) -> void:
 			_charge_pulse = 0.16 - 0.03 * tier
 			FxScript.ring(get_parent(), _muzzle_pos(), CHARGE_COLORS[tier], 8.0 + 3.0 * tier, 2.0, 0.2)
 	if released_once("shoot"):
-		if _charging and _charge_tier() >= 1:
+		if _charging and _charge_tier() >= 1 and _shoot_cooldown<=0 and _weapon_lock<=0:
 			_fire_buster()
 		_end_charge()
 
@@ -710,6 +785,7 @@ func _end_charge() -> void:
 	_charge_fx = null
 
 func _fire_buster() -> void:
+	_begin_salvo()
 	if _shoot_cooldown > 0.0:
 		return
 	var pos := _muzzle_pos()
@@ -754,6 +830,7 @@ func _recoil() -> void:
 	_knock.y = 0.0
 
 func _fire_spread() -> void:
+	_begin_salvo()
 	var pos := _muzzle_pos()
 	var base := aim.angle()
 	for a in [-0.40, -0.20, 0.0, 0.20, 0.40]:
@@ -766,6 +843,7 @@ func _fire_spread() -> void:
 	FxScript.muzzle(get_parent(), pos, false, aim.angle(), Color("8be9ff"))
 
 func _fire_laser() -> void:
+	_begin_salvo()
 	var pos := _muzzle_pos()
 	var b := BulletScript.create(WEAPON_TEX["laser"], pos, aim, 560.0, 3, true, 1.0)
 	b.pierce = true
@@ -776,6 +854,7 @@ func _fire_laser() -> void:
 	AudioManager.play("shoot", -16.0, 1.5)
 
 func _fire_plasma() -> void:
+	_begin_salvo()
 	var pos := _muzzle_pos()
 	var b := BulletScript.create(WEAPON_TEX["plasma"], pos, aim, 240.0, 8, true, 1.5)
 	b.pierce = true
@@ -788,11 +867,14 @@ func _fire_plasma() -> void:
 	FxScript.muzzle(get_parent(), pos, false, aim.angle(), Color("c07dff"))
 
 func _spawn_bullet(b: Bullet) -> void:
+	_shot_flash = 0.10
 	var world := get_parent()
 	if world == null:
 		return
-	b.damage = maxi(1,roundi(b.damage*(1+damage_level*0.2)))
+	b.damage = maxi(1,roundi(b.damage*(1+damage_level*0.10)))
 	b.origin = self
+	b.salvo_hits = _salvo_hits
+	b.salvo_cap = _salvo_cap
 	# Include the barrel in the first sweep: nearby switches can sit behind the muzzle.
 	b.launch_from = global_position + Vector2(facing * 6, -19)
 	b.sweep_launch = true
@@ -843,6 +925,7 @@ func _on_hurt_body(body: Node) -> void:
 		take_damage(body.contact_damage, body.global_position)
 
 func take_damage(amount: int, from_pos: Vector2) -> void:
+	if NetSession.online and not NetSession.host: return
 	amount = maxi(1,amount-armor_level-(1 if character=="red" else 0))
 	if not alive or _invuln > 0.0:
 		return
@@ -861,6 +944,7 @@ func take_damage(amount: int, from_pos: Vector2) -> void:
 		_die()
 
 func fall_death() -> void:
+	if NetSession.online and not NetSession.host: return
 	if not alive:
 		return
 	GameManager.set_player_health(index, 0)

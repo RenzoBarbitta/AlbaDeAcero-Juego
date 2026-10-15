@@ -167,3 +167,7 @@ Los avances individual y cooperativo se guardan separados en
 
 El balance completo de campaña y la latencia de Internet requieren jugar en
 varias PC con el servidor público, además de las comprobaciones automatizadas.
+
+### Online por Radmin/LAN y correcciones de red
+
+El menú online permite elegir salas públicas con código o conexión directa por IP para LAN/Radmin (hasta cuatro jugadores). Se redujo el tráfico, se agregó predicción de movimiento y se sincronizaron sonidos, efectos y animaciones de los invitados. Todos deben actualizar a la versión de protocolo 3. [Instrucciones y balance de armas](docs/ONLINE_RADMIN.md).

@@ -5,7 +5,8 @@ function createRelay(port=Number(process.env.PORT||8787),address="0.0.0.0") {
   const rooms = new Map();
   const server = http.createServer((req,res)=>{res.writeHead(200,{"content-type":"application/json"});res.end(JSON.stringify({service:"alba-room-relay",rooms:rooms.size}));});
   const wss = new WebSocketServer({server,maxPayload:512*1024});
-  const send=(socket,message)=>{if(socket?.readyState===WebSocket.OPEN && (message.type!=="snapshot" || socket.bufferedAmount<512*1024))socket.send(JSON.stringify(message));};
+  // World states become obsolete every 50 ms; do not queue seconds of stale state.
+  const send=(socket,message)=>{if(socket?.readyState===WebSocket.OPEN && (message.type!=="snapshot" || socket.bufferedAmount<32*1024))socket.send(JSON.stringify(message));};
   wss.on("connection",socket=>{
     let room=null, role="", slot=-1, attempts=0, window=Date.now();
     socket.on("message",raw=>{

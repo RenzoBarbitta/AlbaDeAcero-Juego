@@ -43,6 +43,11 @@ func nearest() -> Player:
 			found = p
 	return found
 
+func _process(delta: float) -> void:
+	if get_meta("replica",false):
+		_time += delta
+		queue_redraw()
+
 func _physics_process(delta: float) -> void:
 	if dead or not is_awake():
 		return

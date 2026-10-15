@@ -41,6 +41,7 @@ static func create(kind_: String, pos: Vector2) -> Pickup:
 	return p
 
 func _ready() -> void:
+	add_to_group("net_entity")
 	_base_y = position.y
 	area_entered.connect(_on_area)
 

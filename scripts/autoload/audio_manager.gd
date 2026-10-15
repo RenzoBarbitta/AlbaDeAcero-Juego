@@ -2,6 +2,9 @@ extends Node
 ## Audio chiptune generado en tiempo de ejecución (sin archivos de audio).
 ## Sintetiza ondas cuadradas/triangulares para SFX y música de fondo.
 
+signal sound_played(sound_id: String,db: float,pitch: float)
+var remote_playbacks := 0
+
 const RATE := 22050
 const SFX_POOL := 12
 
@@ -23,6 +26,15 @@ func _ready() -> void:
 	add_child(_music)
 
 func play(sound_id: String, volume_db: float = -6.0, pitch: float = 1.0) -> void:
+	# Record even when the host muted SFX: guests own their audio settings.
+	sound_played.emit(sound_id,volume_db,pitch)
+	_play_local(sound_id,volume_db,pitch)
+
+func play_remote(sound_id: String, volume_db: float, pitch: float) -> void:
+	remote_playbacks += 1
+	_play_local(sound_id,volume_db,pitch)
+
+func _play_local(sound_id: String,volume_db: float,pitch: float) -> void:
 	if not GameManager.settings["sfx"]:
 		return
 	if not _sfx.has(sound_id):

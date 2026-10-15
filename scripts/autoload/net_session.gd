@@ -16,7 +16,23 @@ var slots: Array = [0]
 var match_slots: Array = [0]
 var profiles := {}
 var peer_versions := {}
-const NETWORK_VERSION := 2
+const NETWORK_VERSION := 3
+var direct: RefCounted
+var connection_mode := "public"
+var direct_address := ""
+var ping_ms := 0
+var sent_bytes := 0
+var skipped_snapshots := 0
+var _last_echo := 0
+const EDGE_ACTIONS := ["jump","dash","shoot","weapon_switch","interact","team_attack"]
+var _press_counts := {}
+var _release_counts := {}
+var _sent_presses := {}
+var _sent_releases := {}
+var _capture_previous := {}
+var _received_presses := {}
+var _received_releases := {}
+
 var profile_mobility := {}
 var remote_inputs := {}
 var input_sequences := {}
@@ -30,6 +46,12 @@ var _silence := 0.0
 var _connect_elapsed := 0.0
 var _input_tick := 0.0
 const DEFAULT_URL := "wss://albadeacero-juego.onrender.com"
+
+func _input(event: InputEvent) -> void:
+	if not online or host or local_shop_open or GameManager.state!=GameManager.State.PLAYING: return
+	for action in EDGE_ACTIONS:
+		if event.is_action_pressed(action): _press_counts[action] = int(_press_counts.get(action,0))+1
+		if event.is_action_released(action): _release_counts[action] = int(_release_counts.get(action,0))+1
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -55,6 +77,7 @@ func use_public_server() -> void:
 
 func connect_room(create: bool,code: String = "") -> void:
 	disconnect_room()
+	connection_mode = "public"
 	server_url = server_url.strip_edges().replace("https://","wss://").replace("http://","ws://")
 	if not server_url.begins_with("ws://") and not server_url.begins_with("wss://"):
 		status = "INGRESA LA URL WSS DEL SERVIDOR"
@@ -73,7 +96,30 @@ func connect_room(create: bool,code: String = "") -> void:
 	status = "CONECTANDO..."
 	status_changed.emit()
 
+func connect_direct(create: bool,address: String = "") -> void:
+	disconnect_room()
+	connection_mode = "direct"
+	direct_address = address.strip_edges()
+	host = create
+	local_index = 0 if create else 1
+	if not create and not direct_address.is_valid_ip_address():
+		status = "ESCRIBE LA IP RADMIN DEL ANFITRION"
+		status_changed.emit()
+		return
+	direct = preload("res://scripts/main/direct_transport.gd").new()
+	direct.session = self
+	var err: Error = direct.open(create,direct_address)
+	if err != OK:
+		direct = null
+		status = "NO SE PUDO ABRIR UDP 27840 / REVISA OTRA PARTIDA ABIERTA"
+	else:
+		status = "SALA RADMIN ABIERTA / COMPARTE TU IP" if create else "CONECTANDO POR RADMIN..."
+	status_changed.emit()
+
 func disconnect_room() -> void:
+	if direct:
+		direct.close()
+		direct = null
 	if socket.get_ready_state() != WebSocketPeer.STATE_CLOSED:
 		socket.close()
 	online = false
@@ -93,11 +139,36 @@ func disconnect_room() -> void:
 	_connect_elapsed = 0
 	_latest_input = -1
 	_input_sequence = 0
+	ping_ms = 0
+	_last_echo = 0
+	_press_counts.clear()
+	_release_counts.clear()
+	_sent_presses.clear()
+	_sent_releases.clear()
+	_capture_previous.clear()
+	_received_presses.clear()
+	_received_releases.clear()
+
+func encode_snapshot(data: Dictionary) -> Dictionary:
+	var raw := JSON.stringify(data).to_utf8_buffer()
+	var packed := raw.compress(FileAccess.COMPRESSION_ZSTD)
+	return {"type":"snapshot","encoding":"zstd-json","frame":data.get("frame",0),"size":raw.size(),"data":Marshalls.raw_to_base64(packed)}
 
 func send_packet(packet: Dictionary) -> void:
 	if packet.get("type","")=="profile": packet["version"] = NETWORK_VERSION
+	if packet.get("type","")=="snapshot" and not packet.has("encoding"):
+		packet = encode_snapshot(packet["data"])
+	if direct:
+		direct.send(packet)
+		return
 	if socket.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		socket.send_text(JSON.stringify(packet))
+		# Never append another world state behind a congested socket.
+		if packet.get("type","")=="snapshot" and socket.get_current_outbound_buffered_amount()>32768:
+			skipped_snapshots += 1
+			return
+		var payload := JSON.stringify(packet)
+		sent_bytes += payload.to_utf8_buffer().size()
+		socket.send_text(payload)
 
 func start_match() -> void:
 	if not online or not host:
@@ -126,6 +197,10 @@ func input_for(index: int) -> Dictionary:
 	return remote_inputs.get(str(slot),{})
 
 func _process(delta: float) -> void:
+	if direct:
+		direct.poll(delta)
+		_update_inputs(delta)
+		return
 	socket.poll()
 	if not online and not _pending.is_empty():
 		_connect_elapsed += delta
@@ -143,26 +218,44 @@ func _process(delta: float) -> void:
 		if not _was_connected:
 			_was_connected = true
 			send_packet(_pending)
+		var latest := {}
 		while socket.get_available_packet_count() > 0:
 			var packet = JSON.parse_string(socket.get_packet().get_string_from_utf8())
 			if packet is Dictionary:
-				receive(packet)
-		_input_tick += delta
-		if online and not host and is_instance_valid(world) and GameManager.state == GameManager.State.PLAYING and _input_tick>=1.0/60.0:
-			_input_tick = 0
-			_input_sequence += 1
-			send_packet({"type":"input","seq":_input_sequence,"data":capture_input()})
-		_silence += delta
-		for key in input_ages.keys():
-			input_ages[key] += delta
-			if float(input_ages[key])>0.3: remote_inputs[key] = {}
-		if _silence > 0.3:
-			remote_input = {}
+				if packet.get("type","")=="snapshot":
+					if int(packet.get("frame",0))>=int(latest.get("frame",-1)): latest = packet
+				else: receive(packet)
+		if not latest.is_empty(): receive(latest)
+		_update_inputs(delta)
 	elif _was_connected:
 		disconnect_room()
 		status = "CONEXION PERDIDA - REGRESA A LAS SALAS"
 		GameManager.set_paused(true)
 		status_changed.emit()
+
+func _update_inputs(delta: float) -> void:
+	_input_tick += delta
+	if online and not host and is_instance_valid(world) and GameManager.state == GameManager.State.PLAYING and _input_tick>=1.0/60.0:
+		_input_tick = 0
+		_input_sequence += 1
+		var controls := capture_input()
+		for action in EDGE_ACTIONS:
+			var held: bool = controls.get(action,false)
+			var was_held: bool = _capture_previous.get(action,false)
+			if held and not was_held and _press_counts.get(action,0)==_sent_presses.get(action,0):
+				_press_counts[action] = int(_press_counts.get(action,0))+1
+			if not held and was_held and _release_counts.get(action,0)==_sent_releases.get(action,0):
+				_release_counts[action] = int(_release_counts.get(action,0))+1
+		_capture_previous = controls.duplicate()
+		_sent_presses = _press_counts.duplicate()
+		_sent_releases = _release_counts.duplicate()
+		send_packet({"type":"input","seq":_input_sequence,"data":controls,"presses":_press_counts,"releases":_release_counts,"sent_ms":Time.get_ticks_msec()})
+	_silence += delta
+	for key in input_ages.keys():
+		input_ages[key] += delta
+		if float(input_ages[key])>0.3: remote_inputs[key] = {}
+	if _silence > 0.3:
+		remote_input = {}
 
 func receive(packet: Dictionary) -> void:
 	match packet.get("type",""):
@@ -182,7 +275,7 @@ func receive(packet: Dictionary) -> void:
 			slots = packet.get("slots",slots)
 			_latest_input = -1
 			peer_ready = true
-			status = "%d/4 CONECTADOS / CODIGO %s" % [slots.size(),room_code]
+			status = ("%d/4 CONECTADOS / RADMIN DIRECTO" % slots.size()) if direct else ("%d/4 CONECTADOS / CODIGO %s" % [slots.size(),room_code])
 			status_changed.emit()
 		"profile":
 			peer_versions[str(int(packet.get("sender",1)))] = int(packet.get("version",0))
@@ -197,8 +290,21 @@ func receive(packet: Dictionary) -> void:
 			var key := str(int(packet.get("sender",1)))
 			if host and int(packet.get("seq",-1)) > int(input_sequences.get(key,-1)):
 				_latest_input = int(packet["seq"])
+				var pending: Dictionary = remote_inputs.get(key,{})
 				remote_input = packet.get("data",{})
+				for event_kind in ["presses","releases"]:
+					var previous: Dictionary = (_received_presses if event_kind=="presses" else _received_releases).get(key,{})
+					var counters: Dictionary = packet.get(event_kind,{})
+					var edge_key := "_edges" if event_kind=="presses" else "_released"
+					var edges: Dictionary = pending.get(edge_key,{}).duplicate()
+					for action in EDGE_ACTIONS:
+						if int(counters.get(action,0))>int(previous.get(action,0)): edges[action] = true
+					remote_input[edge_key] = edges
+					if event_kind=="presses": _received_presses[key] = counters.duplicate()
+					else: _received_releases[key] = counters.duplicate()
 				input_sequences[key] = _latest_input
+				remote_input["seq"] = _latest_input
+				remote_input["sent_ms"] = packet.get("sent_ms",0)
 				remote_inputs[key] = remote_input
 				input_ages[key] = 0.0
 				_silence = 0
@@ -222,6 +328,13 @@ func receive(packet: Dictionary) -> void:
 			GameManager.acquired_powers.assign(config["powers"])
 			GameManager.start_stage()
 		"snapshot":
+			if packet.get("encoding","")=="zstd-json":
+				var raw := Marshalls.base64_to_raw(str(packet.get("data","")))
+				var expected := int(packet.get("size",0))
+				if raw.size()>262144 or expected<=0 or expected>1048576: return
+				var decoded = JSON.parse_string(raw.decompress(expected,FileAccess.COMPRESSION_ZSTD).get_string_from_utf8())
+				if not decoded is Dictionary: return
+				packet["data"] = decoded
 			if not host and is_instance_valid(world):
 				world.apply_snapshot(packet["data"])
 		"control":

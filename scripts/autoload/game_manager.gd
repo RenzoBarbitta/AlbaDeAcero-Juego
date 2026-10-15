@@ -97,12 +97,12 @@ const BOSSES := {
 const BOSS_ORDER := ["sierra", "estruendo", "glaciar", "incendio", "voltaje", "coloso", "espectro", "enjambre"]
 
 const POWERS := {
-	"sierra": {"name": "SIERRA", "desc": "DISCO QUE REGRESA Y ATRAVIESA", "cooldown": 0.65},
+	"sierra": {"name": "SIERRA", "desc": "DISCO QUE REGRESA Y ATRAVIESA", "cooldown": 0.95},
 	"estruendo": {"name": "BOMBA", "desc": "GRANADA CON EXPLOSION EN AREA", "cooldown": 0.85},
-	"glaciar": {"name": "HIELO", "desc": "TRES AGUJAS QUE FRENAN ENEMIGOS", "cooldown": 0.48},
+	"glaciar": {"name": "HIELO", "desc": "TRES AGUJAS QUE FRENAN ENEMIGOS", "cooldown": 0.75},
 	"incendio": {"name": "LLAMA", "desc": "ANILLO DE FUEGO A TU ALREDEDOR", "cooldown": 0.9},
-	"voltaje": {"name": "VOLTAJE", "desc": "RAYO QUE ENCADENA OBJETIVOS", "cooldown": 0.65},
-	"coloso": {"name": "SISMO", "desc": "DOS ONDAS DE CHOQUE PERFORANTES", "cooldown": 0.8},
+	"voltaje": {"name": "VOLTAJE", "desc": "RAYO QUE ENCADENA OBJETIVOS", "cooldown": 0.95},
+	"coloso": {"name": "SISMO", "desc": "DOS ONDAS DE CHOQUE PERFORANTES", "cooldown": 1.15},
 	"espectro": {"name": "ESPECTRO", "desc": "ORBE QUE PERSIGUE AL OBJETIVO", "cooldown": 0.6},
 	"enjambre": {"name": "ENJAMBRE", "desc": "TRES DRONES CON GUIADO INDEPENDIENTE", "cooldown": 1.0},
 }
@@ -111,12 +111,12 @@ const POWERS := {
 # No se guarda como progreso de campaña y new_game() vuelve a cerrarlo.
 const ONLINE_WEAPONS := {
 	# Armas online: fuertes y especiales, pero ya no borran oleadas solas.
-	"online_arc": {"name":"ARCO TESLA", "desc":"ENCADENA HASTA 3 OBJETIVOS / DAÑO REDUCIDO", "cooldown":0.88, "color":Color("62e8ff")},
+	"online_arc": {"name":"ARCO TESLA", "desc":"ENCADENA HASTA 3 OBJETIVOS / DAÑO REDUCIDO", "cooldown":1.15, "color":Color("62e8ff")},
 	"online_lance": {"name":"LANZA FOTONICA", "desc":"RAYO PESADO / ATRAVIESA HASTA 5 ENEMIGOS", "cooldown":1.15, "color":Color("ffe46b")},
 	"online_swarm": {"name":"ENJAMBRE X4", "desc":"CUATRO MISILES CON GUIADO MODERADO", "cooldown":1.30, "color":Color("69ff9f")},
 	"online_nova": {"name":"NOVA CIRCULAR", "desc":"DESCARGA RADIAL DE 8 PROYECTILES", "cooldown":1.25, "color":Color("ff73df")},
-	"online_saw": {"name":"DOBLE SIERRA", "desc":"DOS DISCOS DE RETORNO / PERFORACION LIMITADA", "cooldown":1.18, "color":Color("ff9b4b")},
-	"online_void": {"name":"LANZA VACIO", "desc":"PROYECTIL PESADO / PERFORACION LIMITADA", "cooldown":1.55, "color":Color("9b7cff")},
+	"online_saw": {"name":"DOBLE SIERRA", "desc":"DOS DISCOS DE RETORNO / PERFORACION LIMITADA", "cooldown":1.50, "color":Color("ff9b4b")},
+	"online_void": {"name":"LANZA VACIO", "desc":"PROYECTIL PESADO / PERFORACION LIMITADA", "cooldown":1.90, "color":Color("9b7cff")},
 }
 
 const ONLINE_MOBILITY := {

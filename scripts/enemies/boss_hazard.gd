@@ -17,6 +17,7 @@ var return_to := Vector2.ZERO
 var _hits := {}
 
 func _ready() -> void:
+	add_to_group("net_entity")
 	add_to_group("boss_hazard")
 	collision_layer = 0
 	collision_mask = 0

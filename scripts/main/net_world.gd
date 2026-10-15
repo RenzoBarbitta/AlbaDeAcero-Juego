@@ -7,6 +7,49 @@ var _actor_targets: Array = []
 var _entity_targets := {}
 var scenery: Array = []
 var features: Array = []
+var _events: Array = []
+var _event_id := 0
+var _last_event := 0
+var _sound_times := {}
+var _entity_velocities := {}
+var _snapshot_age := 0.0
+var replaying := false
+var remote_sound_count := 0
+var remote_fx_count := 0
+
+func record_event(kind: String,data: Dictionary) -> void:
+	if not NetSession.online or not NetSession.host or GameManager.state!=GameManager.State.PLAYING: return
+	_event_id += 1
+	_events.append({"id":_event_id,"kind":kind,"data":data,"ms":Time.get_ticks_msec()})
+	while _events.size()>128: _events.pop_front()
+
+func _sound(sound_id: String,db: float,pitch: float) -> void:
+	if sound_id in ["select","combo","gameover"]: return
+	var now := Time.get_ticks_msec()
+	if now-int(_sound_times.get(sound_id,-1000))<70: return
+	_sound_times[sound_id] = now
+	record_event("sound",{"sound":sound_id,"db":db,"pitch":pitch})
+
+func _play_events(events: Array) -> void:
+	replaying = true
+	for event in events:
+		if int(event["id"])<=_last_event: continue
+		_last_event = int(event["id"])
+		var data: Dictionary = event["data"]
+		if event["kind"]=="sound":
+			AudioManager.play_remote(data["sound"],float(data["db"]),float(data["pitch"]))
+			remote_sound_count += 1
+			continue
+		var pos := Vector2(data.get("x",0),data.get("y",0))
+		var col := Color.html(data.get("color","ffffff"))
+		match event["kind"]:
+			"explosion": FX.explosion(game.world,pos,float(data["size"]))
+			"muzzle": FX.muzzle(game.world,pos,false,float(data["angle"]),col)
+			"ring": FX.ring(game.world,pos,col,float(data["start"]),float(data["end"]),float(data["duration"]))
+			"beam": FX.beam(game.world,pos,Vector2(data["tx"],data["ty"]),col)
+			"damage": FX.damage_number(game.world,pos,int(data["amount"]),col,data["crit"])
+		remote_fx_count += 1
+	replaying = false
 const REGION := preload("res://scripts/enemies/zone_enemy.gd")
 const BOSS_ART := preload("res://scripts/enemies/boss_visual.gd")
 const PICKUP := preload("res://scripts/pickups/pickup.gd")
@@ -16,13 +59,18 @@ const FX := preload("res://scripts/fx/fx.gd")
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	NetSession.world = self
+	AudioManager.sound_played.connect(_sound)
 	for child in descendants(game.level):
 		if child is MovingPlatform or child.get_script()==preload("res://scripts/world/crumble_platform.gd"): scenery.append(child)
 		if child.get_script() in [preload("res://scripts/world/arena_feature.gd"),preload("res://scripts/world/traversal_feature.gd")]: features.append(child)
 	if not NetSession.host:
 		game.level.process_mode = Node.PROCESS_MODE_DISABLED
 		for p in game.players:
-			p.set_physics_process(false)
+			p.set_physics_process(p.index==NetSession.local_index)
+		# Only decorative nodes escape the disabled authoritative level tree.
+		for child in descendants(game.level):
+			if child.get_script() in [preload("res://scripts/world/scene_landmarks.gd"),preload("res://scripts/world/tower_interior.gd")]:
+				child.process_mode = Node.PROCESS_MODE_PAUSABLE
 		for e in descendants(game.level):
 			if e is EnemyBase or e is Pickup:
 				e.visible = false
@@ -49,11 +97,17 @@ func _process(delta: float) -> void:
 			_frame += 1
 			NetSession.send_packet({"type":"snapshot","data":snapshot()})
 	else:
-		var blend := 1-exp(-delta*22)
+		var blend := 1-exp(-delta*35)
+		_snapshot_age += delta
+		var advance := delta if _snapshot_age<0.1 else 0.0
 		for i in mini(_actor_targets.size(),game.players.size()):
+			if i==NetSession.local_index: continue
+			_actor_targets[i] += game.players[i].velocity*advance
 			game.players[i].position = game.players[i].position.lerp(_actor_targets[i],blend)
 		for id in _entity_targets.keys():
 			if proxies.has(id):
+				if proxies[id].get_meta("effect","")=="sierra": proxies[id].rotation += delta*22
+				_entity_targets[id] += _entity_velocities.get(id,Vector2.ZERO)*advance
 				proxies[id].position = proxies[id].position.lerp(_entity_targets[id],blend)
 
 func visible_to_team(at: Vector2,distance: float) -> bool:
@@ -68,13 +122,13 @@ func snapshot() -> Dictionary:
 		moving.append({"x":child.position.x,"y":child.position.y,"visible":child.visible,"crumble":child._state if child.get_script()==preload("res://scripts/world/crumble_platform.gd") else 0})
 	var actors: Array = []
 	for p in game.players:
-		actors.append({"p":[p.position.x,p.position.y],"v":[p.velocity.x,p.velocity.y],"a":[p.aim.x,p.aim.y],"f":p.facing,"alive":p.alive,"connected":p.network_active,"floor":p.is_on_floor(),"weapon":p.weapon,"hurt":p._invuln,"dash":p._dash_time,"shot":p._shoot_cooldown,"upgrades":[p.damage_level,p.armor_level,p.fire_level],"mobility":p.bonus_mobility,"jet":p.jet_active,"fuel":p.jet_fuel})
+		actors.append({"p":[p.position.x,p.position.y],"v":[p.velocity.x,p.velocity.y],"a":[p.aim.x,p.aim.y],"f":p.facing,"alive":p.alive,"connected":p.network_active,"floor":p.is_on_floor(),"weapon":p.weapon,"hurt":p._invuln,"dash":p._dash_time,"shot":p._shoot_cooldown,"flash":p._shot_flash,"upgrades":[p.damage_level,p.armor_level,p.fire_level],"mobility":p.bonus_mobility,"jet":p.jet_active,"fuel":p.jet_fuel,"charge":p._charge_t if p._charging else 0,"landing":p.landing_squash,"ack":p.last_input_seq,"echo":p.last_input_ms})
 	var entities: Array = []
-	for e in descendants(game.world):
+	for e in game.get_tree().get_nodes_in_group("enemy")+game.get_tree().get_nodes_in_group("net_entity"):
 		if e is Node2D and not visible_to_team(e.global_position,600):
 			continue
 		if e is EnemyBase and not e.dead:
-			var item := {"id":str(e.get_instance_id()),"type":"enemy","p":[e.global_position.x,e.global_position.y],"hp":e.health,"max":e.max_health,"boss":e is Boss,"f":e.facing}
+			var item := {"id":str(e.get_instance_id()),"type":"enemy","p":[e.global_position.x,e.global_position.y],"v":[e.velocity.x,e.velocity.y],"hp":e.health,"max":e.max_health,"boss":e is Boss,"f":e.facing}
 			if e is Boss:
 				item["design"] = e.boss_id
 				item["rage"] = e._rage
@@ -94,7 +148,7 @@ func snapshot() -> Dictionary:
 		elif e.get_script()==BOSS_HAZARD and not e.dead:
 			entities.append({"id":str(e.get_instance_id()),"type":"boss_hazard","p":[e.position.x,e.position.y],"v":[e.velocity.x,e.velocity.y],"kind":e.kind,"size":[e.size.x,e.size.y],"color":e.color.to_html(),"age":e.age,"warn":e.warn,"duration":e.duration,"health":e.health})
 		elif e is Bullet and not e._dead:
-			entities.append({"id":str(e.get_instance_id()),"type":"bullet","p":[e.global_position.x,e.global_position.y],"v":[e.velocity.x,e.velocity.y],"color":e.color.to_html(),"player":e.from_player})
+			entities.append({"id":str(e.get_instance_id()),"type":"bullet","p":[e.global_position.x,e.global_position.y],"v":[e.velocity.x,e.velocity.y],"color":e.color.to_html(),"player":e.from_player,"texture":e._sprite.texture.resource_path,"scale":e._sprite.scale.x,"effect":e.effect,"heavy":e.heavy})
 		elif e is Pickup:
 			entities.append({"id":str(e.get_instance_id()),"type":"pickup","p":[e.global_position.x,e.global_position.y],"kind":e.kind})
 	var puzzle_states: Array = []
@@ -103,13 +157,17 @@ func snapshot() -> Dictionary:
 	var station_states: Array = []
 	for station in game.level.stations:
 		station_states.append({"solved":station.solved,"progress":station.progress,"wave":station.wave,"owner":station.plate_owner})
-	return {"rescue":game.world.get_node("CoopDirector").rescue if game.world.has_node("CoopDirector") else [],"scenery":moving,"horde":game.level.horde_snapshot() if game.level.has_method("horde_snapshot") else {},"frame":_frame,"actors":actors,"entities":entities,"puzzles":puzzle_states,"stations":station_states,"state":GameManager.state,"hp":GameManager.p_health,"score":GameManager.score,"kills":GameManager.kills,"time":GameManager.play_time,"energy":GameManager.team_energy,"retries":GameManager.team_retries,"boss_down":game.level._boss_down,"arena":game.level._arena_locked,"boss_hp":game.level.boss.health if is_instance_valid(game.level.boss) else 0,"boss_id":game.level.boss.boss_id if is_instance_valid(game.level.boss) else GameManager.selected_boss,"boss_max":game.level.boss.max_health if is_instance_valid(game.level.boss) else 1,"checkpoint":[game.level._checkpoint.x,game.level._checkpoint.y],"powers":GameManager.acquired_powers}
+	var cutoff := Time.get_ticks_msec()-800
+	_events = _events.filter(func(event): return int(event["ms"])>cutoff)
+	return {"events":_events,"rescue":game.world.get_node("CoopDirector").rescue if game.world.has_node("CoopDirector") else [],"scenery":moving,"horde":game.level.horde_snapshot() if game.level.has_method("horde_snapshot") else {},"frame":_frame,"actors":actors,"entities":entities,"puzzles":puzzle_states,"stations":station_states,"state":GameManager.state,"hp":GameManager.p_health,"score":GameManager.score,"kills":GameManager.kills,"time":GameManager.play_time,"energy":GameManager.team_energy,"retries":GameManager.team_retries,"boss_down":game.level._boss_down,"arena":game.level._arena_locked,"boss_hp":game.level.boss.health if is_instance_valid(game.level.boss) else 0,"boss_id":game.level.boss.boss_id if is_instance_valid(game.level.boss) else GameManager.selected_boss,"boss_max":game.level.boss.max_health if is_instance_valid(game.level.boss) else 1,"checkpoint":[game.level._checkpoint.x,game.level._checkpoint.y],"powers":GameManager.acquired_powers}
 
 func apply_snapshot(data: Dictionary) -> void:
 	if GameManager.scene_transition_pending or NetSession.local_index<0 or NetSession.local_index>=game.players.size() or data.get("actors",[]).size()!=game.players.size(): return
 	if int(data.get("frame",0)) <= _frame:
 		return
 	_frame = int(data["frame"])
+	_snapshot_age = 0.0
+	_play_events(data.get("events",[]))
 	var director: Node2D = game.world.get_node_or_null("CoopDirector")
 	if director:
 		director.rescue = data.get("rescue",[0,0,0,0])
@@ -120,6 +178,7 @@ func apply_snapshot(data: Dictionary) -> void:
 		scenery[i].visible = item["visible"]
 		if scenery[i].get_script()==preload("res://scripts/world/crumble_platform.gd"):
 			scenery[i]._sprite.modulate.a = 0.0 if int(item.get("crumble",0))==2 else 1.0
+			scenery[i]._shape.set_deferred("disabled",int(item.get("crumble",0))==2)
 		elif scenery[i] is MovingPlatform:
 			scenery[i]._tile_art.visible = scenery[i].skin==""
 			scenery[i].queue_redraw()
@@ -133,10 +192,16 @@ func apply_snapshot(data: Dictionary) -> void:
 		var p: Player = game.players[i]
 		var actor: Dictionary = data["actors"][i]
 		var position_target := Vector2(actor["p"][0],actor["p"][1])
-		if p.position.distance_to(position_target)>90:
+		if i==NetSession.local_index:
+			p.reconcile(position_target,Vector2(actor["v"][0],actor["v"][1]),int(actor.get("ack",0)),bool(actor["alive"]))
+			var echo := int(actor.get("echo",0))
+			if echo>NetSession._last_echo:
+				NetSession._last_echo = echo
+				NetSession.ping_ms = maxi(0,Time.get_ticks_msec()-echo)
+		elif p.position.distance_to(position_target)>90:
 			p.position = position_target
 		_actor_targets.append(position_target)
-		p.velocity = Vector2(actor["v"][0],actor["v"][1])
+		if i!=NetSession.local_index: p.velocity = Vector2(actor["v"][0],actor["v"][1])
 		p.aim = Vector2(actor["a"][0],actor["a"][1])
 		p.facing = int(actor["f"])
 		p.alive = actor["alive"]
@@ -145,8 +210,12 @@ func apply_snapshot(data: Dictionary) -> void:
 		p.net_on_floor = actor["floor"]
 		p.weapon = actor["weapon"]
 		p._invuln = float(actor["hurt"])
-		p._dash_time = float(actor.get("dash",0))
+		if i!=NetSession.local_index: p._dash_time = float(actor.get("dash",0))
+		p.landing_squash = float(actor.get("landing",0))
+		p._charge_t = float(actor.get("charge",0))
+		p._charging = p._charge_t>0
 		p._shoot_cooldown = float(actor.get("shot",0))
+		p._shot_flash = float(actor.get("flash",0))
 		var upgrades: Array = actor.get("upgrades",[0,0,0])
 		p.damage_level = int(upgrades[0])
 		p.armor_level = int(upgrades[1])
@@ -172,6 +241,7 @@ func apply_snapshot(data: Dictionary) -> void:
 					proxy.zone = item.get("zone",GameManager.theme_id)
 					proxy.airborne = item.get("air",false)
 					proxy.small = item.get("small",false)
+				proxy.set_meta("replica",true)
 			elif item["type"]=="boss_hazard":
 				proxy = BOSS_HAZARD.new()
 				proxy.kind = item["kind"]
@@ -182,7 +252,13 @@ func apply_snapshot(data: Dictionary) -> void:
 				proxy = PICKUP.create(item["kind"],Vector2.ZERO)
 			else:
 				proxy = Sprite2D.new()
-				proxy.texture = load("res://assets/sprites/fx/bullet_player.png" if item["player"] else "res://assets/sprites/fx/bullet_enemy.png")
+				var path: String = item.get("texture","")
+				# Whitelist shipped projectile textures; never load arbitrary resources.
+				if not path.begins_with("res://assets/sprites/fx/bullet_") or not path.ends_with(".png"):
+					path = "res://assets/sprites/fx/bullet_player.png" if item["player"] else "res://assets/sprites/fx/bullet_enemy.png"
+				proxy.texture = load(path)
+				proxy.scale = Vector2.ONE*float(item.get("scale",1))
+				proxy.set_meta("effect",item.get("effect",""))
 				proxy.material = FX.additive()
 			game.world.add_child(proxy)
 			proxy.set_physics_process(false)
@@ -197,6 +273,8 @@ func apply_snapshot(data: Dictionary) -> void:
 		if not _entity_targets.has(id) or proxy.position.distance_to(position_target)>90:
 			proxy.position = position_target
 		_entity_targets[id] = position_target
+		var speed: Array = item.get("v",[0,0])
+		_entity_velocities[id] = Vector2(speed[0],speed[1])
 		if item["type"] == "enemy":
 			if item["boss"]:
 				proxy.rage = item["rage"]
@@ -222,12 +300,13 @@ func apply_snapshot(data: Dictionary) -> void:
 			proxy.health = int(item["health"])
 		elif item["type"] == "bullet":
 			proxy.modulate = Color.html(item["color"])
-			proxy.rotation = Vector2(item["v"][0],item["v"][1]).angle()
+			if item.get("effect","")!="sierra": proxy.rotation = Vector2(item["v"][0],item["v"][1]).angle()
 	for id in proxies.keys():
 		if not seen.has(id):
 			proxies[id].queue_free()
 			proxies.erase(id)
 			_entity_targets.erase(id)
+			_entity_velocities.erase(id)
 	for i in mini(game.level.puzzles.size(),data["puzzles"].size()):
 		var puzzle: Node2D = game.level.puzzles[i]
 		var remote: Dictionary = data["puzzles"][i]

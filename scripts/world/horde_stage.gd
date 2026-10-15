@@ -32,9 +32,9 @@ var boss_pending := false
 var bosses_defeated := 0
 var final_boss_active := false
 const SHOP := {
-	"damage":{"name":"POTENCIA +20%","cost":90},
+	"damage":{"name":"POTENCIA +10%","cost":90},
 	"armor":{"name":"BLINDAJE +1","cost":110},
-	"fire":{"name":"CADENCIA +15%","cost":100},
+	"fire":{"name":"CADENCIA +5.5%","cost":100},
 	"heal":{"name":"REPARAR +14","cost":40},
 	"double_jump":{"name":"DOBLE SALTO","cost":180},
 	"jetpack":{"name":"JETPACK","cost":300},

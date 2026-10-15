@@ -16,6 +16,23 @@ static func additive() -> CanvasItemMaterial:
 		_add_mat.blend_mode = CanvasItemMaterial.BLEND_MODE_ADD
 	return _add_mat
 
+static func _network(parent: Node,kind: String,data: Dictionary) -> void:
+	if parent==null or not parent.is_inside_tree(): return
+	var session := parent.get_node_or_null("/root/NetSession")
+	if session and session.online and session.host and is_instance_valid(session.world):
+		session.world.record_event(kind,data)
+
+static func beam(parent: Node,from: Vector2,to: Vector2,col: Color) -> void:
+	_network(parent,"beam",{"x":from.x,"y":from.y,"tx":to.x,"ty":to.y,"color":col.to_html()})
+	var line := Line2D.new()
+	line.points = PackedVector2Array([from,from.lerp(to,0.5)+Vector2(0,-10),to])
+	line.width = 2
+	line.default_color = col
+	parent.add_child(line)
+	var tween := line.create_tween()
+	tween.tween_property(line,"modulate:a",0.0,0.2)
+	tween.tween_callback(line.queue_free)
+
 var _mode: int = Mode.SPARK
 var _frames: Array[Texture2D] = []
 var _t := 0.0
@@ -31,6 +48,7 @@ static func _explosion_frames() -> Array[Texture2D]:
 	return arr
 
 static func explosion(parent: Node, pos: Vector2, size_mul: float = 1.0) -> void:
+	_network(parent,"explosion",{"x":pos.x,"y":pos.y,"size":size_mul})
 	if parent == null:
 		return
 	var f := Fx.new()
@@ -57,6 +75,7 @@ static func spark(parent: Node, pos: Vector2, color: Color = Color(1, 1, 1)) -> 
 
 static func muzzle(parent: Node, pos: Vector2, flip: bool = false, rot: float = NAN,
 		color: Color = Color(1, 1, 1)) -> void:
+	_network(parent,"muzzle",{"x":pos.x,"y":pos.y,"angle":0.0 if is_nan(rot) else rot,"color":color.to_html()})
 	if parent == null:
 		return
 	var f := Fx.new()
@@ -151,6 +170,7 @@ static func impact(parent: Node, pos: Vector2, color: Color = Color(1, 1, 1), si
 ## Anillo expansivo dibujado (ideal para telegraphs y ondas de choque).
 static func ring(parent: Node, pos: Vector2, color: Color, start_r: float,
 		end_r: float, dur: float) -> void:
+	_network(parent,"ring",{"x":pos.x,"y":pos.y,"color":color.to_html(),"start":start_r,"end":end_r,"duration":dur})
 	if parent == null:
 		return
 	var line := Line2D.new()
@@ -177,6 +197,7 @@ static func ring(parent: Node, pos: Vector2, color: Color, start_r: float,
 ## Número de daño flotante (fuente pixel, nunca se pisa con otros textos).
 static func damage_number(parent: Node, pos: Vector2, amount: int,
 		color: Color = Color("ffe14d"), crit: bool = false) -> void:
+	_network(parent,"damage",{"x":pos.x,"y":pos.y,"color":color.to_html(),"amount":amount,"crit":crit})
 	if parent == null:
 		return
 	var txt := ("%d" % amount) if not crit else ("%d!" % amount)

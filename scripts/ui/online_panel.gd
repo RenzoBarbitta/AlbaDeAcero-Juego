@@ -4,6 +4,9 @@ var code: LineEdit
 var launch: Button
 var message: Label
 var server_badge: Label
+var mode: OptionButton
+var help: Label
+var copy_button: Button
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -29,7 +32,20 @@ func _ready() -> void:
 		GameManager.party_mobility = [GameManager.mobility.duplicate()]
 		GameManager.start_stage())
 
-	var help := Label.new()
+	server_badge.visible = false
+	mode = OptionButton.new()
+	mode.position = Vector2(36,76)
+	mode.size = Vector2(280,28)
+	mode.add_theme_font_size_override("font_size",12)
+	mode.add_item("INTERNET / SALAS CON CODIGO")
+	mode.add_item("RADMIN / LAN DIRECTA")
+	mode.select(1 if NetSession.connection_mode=="direct" else 0)
+	mode.item_selected.connect(func(_index: int):
+		NetSession.disconnect_room()
+		code.text = ""
+		_refresh_mode())
+	add_child(mode)
+	help = Label.new()
 	help.position = Vector2(36,112)
 	help.size = Vector2(568,38)
 	help.text = "CREA UNA SALA Y COMPARTE EL CODIGO / O ESCRIBE EL CODIGO DE TU AMIGO"
@@ -41,7 +57,8 @@ func _ready() -> void:
 	code = LineEdit.new()
 	code.position = Vector2(338,170)
 	code.size = Vector2(140,32)
-	code.max_length = 6
+	code.max_length = 45
+	code.add_theme_font_size_override("font_size",12)
 	code.placeholder_text = "CODIGO"
 	code.text_submitted.connect(func(_text: String): connect_to_room(false))
 	add_child(code)
@@ -62,7 +79,9 @@ func _ready() -> void:
 		if NetSession.online and not NetSession.host:
 			NetSession.send_packet({"type":"profile","pilot":id,"mobility":GameManager.mobility}))
 	add_child(pilot)
-	make_button("COPIAR CODIGO",Rect2(338,218,266,30),func(): DisplayServer.clipboard_set(NetSession.room_code))
+	copy_button = make_button("COPIAR CODIGO",Rect2(338,218,266,30),func():
+		DisplayServer.clipboard_set(_host_ip() if mode.selected==1 else NetSession.room_code))
+	_refresh_mode()
 
 	message = Label.new()
 	message.position = Vector2(36,258)
@@ -85,7 +104,24 @@ func make_button(label: String,rect: Rect2,callback: Callable) -> Button:
 	add_child(button)
 	return button
 
+func _host_ip() -> String:
+	var addresses := IP.get_local_addresses()
+	for ip in addresses:
+		if ip.begins_with("26."): return ip
+	for ip in addresses:
+		if ip.begins_with("192.168.") or ip.begins_with("10."): return ip
+	return "127.0.0.1"
+
+func _refresh_mode() -> void:
+	var is_direct := mode.selected==1
+	code.placeholder_text = "IP DEL ANFITRION" if is_direct else "CODIGO"
+	copy_button.text = "COPIAR MI IP" if is_direct else "COPIAR CODIGO"
+	help.text = "TODOS EN LA MISMA RED RADMIN / UNO CREA Y LOS DEMAS ENTRAN CON SU IP / UDP 27840" if is_direct else "CREA UNA SALA Y COMPARTE EL CODIGO / O ESCRIBE EL CODIGO DE TU AMIGO"
+
 func connect_to_room(create: bool) -> void:
+	if mode.selected==1:
+		NetSession.connect_direct(create,code.text.strip_edges())
+		return
 	if not create and code.text.strip_edges().length()!=6:
 		NetSession.status = "EL CODIGO DEBE TENER 6 CARACTERES"
 		NetSession.status_changed.emit()
@@ -93,7 +129,8 @@ func connect_to_room(create: bool) -> void:
 	NetSession.connect_room(create,code.text.strip_edges())
 
 func _process(_delta: float) -> void:
-	message.text = NetSession.status
+	message.text = NetSession.status+(" / %d ms" % NetSession.ping_ms if NetSession.online and not NetSession.host and NetSession.ping_ms>0 else "")
+	mode.disabled = NetSession.online
 	server_badge.text = "SERVIDOR PUBLICO / CONECTADO" if NetSession.online else "SERVIDOR PUBLICO / LISTO"
 	launch.disabled = not NetSession.online or not NetSession.host
 	launch.text = "ELEGIR EDIFICIO" if NetSession.host else "ESPERANDO AL ANFITRION"

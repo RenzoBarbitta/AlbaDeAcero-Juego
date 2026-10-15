@@ -12,10 +12,12 @@ const LIGHT := Color("def7ff")
 
 func _process(delta: float) -> void:
 	t += delta
+	if is_instance_valid(actor) and NetSession.online and not NetSession.host:
+		actor._shot_flash = maxf(0,actor._shot_flash-delta)
 	var speed := absf(actor.velocity.x) if is_instance_valid(actor) else (90.0 if preview_pose=="run" else 0.0)
 	gait += speed*delta/11.5
 	var bucket := floori(gait/PI)
-	if bucket!=_step_bucket and is_instance_valid(actor) and actor.alive and actor.is_on_floor() and speed>65:
+	if bucket!=_step_bucket and is_instance_valid(actor) and actor.alive and (actor.net_on_floor if NetSession.online and not NetSession.host else actor.is_on_floor()) and speed>65:
 		preload("res://scripts/fx/fx.gd").spark(actor.get_parent(),actor.global_position+Vector2(-actor.facing*4,-1),Color("89a3ad"))
 	_step_bucket = bucket
 	queue_redraw()
@@ -73,7 +75,7 @@ func _draw() -> void:
 		running = absf(actor.velocity.x) > 8
 		air = not actor.net_on_floor if NetSession.online and not NetSession.host else not actor.is_on_floor()
 		dash = actor._dash_time > 0
-		shooting = actor._shoot_cooldown > 0.05
+		shooting = actor._shot_flash > 0
 		modulate.a = 0.3 if actor._invuln > 0 and int(t*20)%2 == 0 else 1.0
 	if preview_pose != "":
 		running = preview_pose == "run"
@@ -198,5 +200,8 @@ func _draw() -> void:
 			draw_circle(Vector2(7+recoil,1),3,Color("ffb15c"))
 		"violet","cyan":
 			draw_arc(Vector2(13+recoil,0),5,-PI*0.7,PI*0.7,12,c,2)
+	if is_instance_valid(actor) and actor._charging and actor._charge_t>0.32:
+		var radius := 3.0+minf(3,actor._charge_t*2)
+		draw_arc(Vector2(15,0),radius,t*7,t*7+4.5,12,Color("8be9ff"),1.5)
 	if shooting:
 		draw_circle(Vector2(15,0),3,Color(0.4,0.9,1,0.45))
